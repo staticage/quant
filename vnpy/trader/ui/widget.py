@@ -4,6 +4,7 @@ Basic widgets for UI.
 
 import csv
 from datetime import datetime
+from pickle import Pickler
 import platform
 from enum import Enum
 from typing import Any, Dict, List
@@ -701,7 +702,7 @@ class TradingWidget(QtWidgets.QWidget):
 
         self.symbol_line: QtWidgets.QLineEdit = QtWidgets.QLineEdit()
         self.symbol_line.returnPressed.connect(self.set_vt_symbol)
-
+        self.symbol_line.setText("BTCUSDT")
         self.name_line: QtWidgets.QLineEdit = QtWidgets.QLineEdit()
         self.name_line.setReadOnly(True)
 
@@ -888,7 +889,7 @@ class TradingWidget(QtWidgets.QWidget):
         symbol: str = str(self.symbol_line.text())
         if not symbol:
             return
-
+  
         # Generate vt_symbol from symbol and exchange
         exchange_value: str = str(self.exchange_combo.currentText())
         vt_symbol: str = f"{symbol}.{exchange_value}"
@@ -912,6 +913,7 @@ class TradingWidget(QtWidgets.QWidget):
 
             # Update price digits
             self.price_digits = get_digits(contract.pricetick)
+
 
         self.clear_label_text()
         self.volume_line.setText("")

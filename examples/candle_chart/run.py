@@ -11,8 +11,8 @@ if __name__ == "__main__":
 
     database = get_database()
     bars = database.load_bar_data(
-        "IF888",
-        Exchange.CFFEX,
+        "BTCUSDT",
+        Exchange.BINANCE,
         interval=Interval.MINUTE,
         start=datetime(2019, 7, 1),
         end=datetime(2019, 7, 17)
