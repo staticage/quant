@@ -1,0 +1,71 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { defaults, validateConfig, runnerArguments } from '../lib/config.mjs';
+
+test('valid request yields fixed argv with selected strategies and native windows',()=>{
+  const config=validateConfig({...defaults,strategies:['S01','S02'],fast:10,slow:80,skipDownload:true});
+  const args=runnerArguments(config,'/work/user_data/ui-runs/test');
+  assert.equal(args[args.indexOf('--fast')+1],'10');
+  assert.equal(args[args.indexOf('--slow')+1],'80');
+  assert.ok(args.includes('--skip-download'));
+  assert.deepEqual(args.slice(args.indexOf('--strategies')+1,args.indexOf('--exchange')),['S01','S02']);
+});
+test('reject unknown strategies and shell/path injection inputs',()=>{
+  for(const change of [{strategies:['../../evil']},{exchange:'binance; touch /tmp/x'},
+    {pairs:['BTC/USDT;echo x']},{pairs:['../../USDT']},{pairs:['BTC/USDT:USDT']}])
+    assert.throws(()=>validateConfig({...defaults,...change}));
+});
+test('reject invalid dates, numerical bounds and infeasible stake',()=>{
+  for(const change of [{start:'2026-02-30'},{end:defaults.start},{fee:NaN},{stake:10000},
+    {wallet:Infinity},{fast:60},{entry:2,exit:3},{slow:3.5}])
+    assert.throws(()=>validateConfig({...defaults,...change}));
+});
+test('S05 must use daily candles and duplicate pairs/strategies are normalized',()=>{
+  assert.throws(()=>validateConfig({...defaults,strategies:['S05'],timeframe:'1h'}));
+  const config=validateConfig({...defaults,strategies:['S01','S01'],pairs:['BTC/USDT','BTC/USDT']});
+  assert.deepEqual(config.strategies,['S01']);assert.deepEqual(config.pairs,['BTC/USDT']);
+});
+
+// MACD参数和细周期必须经后端校验并原样传入Freqtrade命令数组。
+test('MACD configurable windows and detail timeframe reach native runner',()=>{
+  const config=validateConfig({...defaults,macdFast:19,macdSlow:39,macdSignal:9});
+  const args=runnerArguments(config,'/work/user_data/ui-runs/test');
+  assert.equal(args[args.indexOf('--macd-fast')+1],'19');
+  assert.equal(args[args.indexOf('--macd-slow')+1],'39');
+  assert.equal(args[args.indexOf('--macd-signal')+1],'9');
+  assert.equal(args[args.indexOf('--timeframe-detail')+1],'5m');
+  for(const change of [{macdFast:26},{macdSignal:1},{macdFast:12.5},{timeframeDetail:'1m; echo x'}])
+    assert.throws(()=>validateConfig({...defaults,...change}));
+});
+
+test('enhancement toggles default off and all options reach CLI as structured argv',()=>{
+  const original=validateConfig(defaults);
+  for(const key of ['macdMtf','macdRsi','macdMa','macdVolume']) assert.equal(original[key],false);
+  assert.ok(!runnerArguments(original,'/work/user_data/ui-runs/test').includes('--macd-mtf'));
+  const config=validateConfig({...defaults,timeframe:'1h',macdMtf:true,macdTrendTimeframe:'1d',
+    macdTrendMode:'both',macdTrendFast:19,macdTrendSlow:39,macdRsi:true,macdRsiMin:0,
+    macdRsiMax:65,macdMa:true,macdMaType:'sma',macdMaPeriod:100,macdVolume:true,
+    macdVolumeWindow:30,macdVolumeMultiplier:1.5});
+  const args=runnerArguments(config,'/work/user_data/ui-runs/test');
+  for(const flag of ['--macd-mtf','--macd-rsi','--macd-ma','--macd-volume']) assert.ok(args.includes(flag));
+  for(const [flag,value] of [['--macd-trend-mode','both'],['--macd-trend-fast','19'],
+    ['--macd-rsi-min','0'],['--macd-rsi-max','65'],['--macd-ma-type','sma'],
+    ['--macd-ma-period','100'],['--macd-volume-window','30'],['--macd-volume-multiplier','1.5']])
+    assert.equal(args[args.indexOf(flag)+1],value);
+});
+test('enhancements reject invalid timeframe ordering, ranges, types and non-MACD use',()=>{
+  for(const change of [{macdMtf:true},{timeframe:'4h',macdMtf:true,macdTrendTimeframe:'4h'},
+    {macdRsiMin:70,macdRsiMax:30},{macdRsi:true,macdRsiPeriod:null},
+    {macdTrendMode:'future'},{macdTrendTimeframe:'1m'},{macdTrendFast:26},
+    {macdMaType:'weighted'},{macdVolumeMultiplier:0},{macdVolumeMultiplier:Infinity},
+    {macdMtf:'false'},{strategies:['S01'],macdRsi:true}])
+    assert.throws(()=>validateConfig({...defaults,...change}));
+});
+test('old/native records restore actual filter settings instead of inheriting new defaults',async()=>{
+  const {restoreMacdOptions,macdFilterDescriptions}=await import('../lib/config.mjs');
+  const old=restoreMacdOptions({});assert.equal(old.macdMtf,false);assert.deepEqual(macdFilterDescriptions({}),[]);
+  const native={timeframe:'1h',macd_mtf:true,macd_trend_mode:'zero',macd_rsi:true,macd_rsi_max:65,macd_volume:true};
+  const restored=restoreMacdOptions(native);
+  assert.equal(restored.macdMtf,true);assert.equal(restored.macdRsiMax,65);
+  assert.equal(restored.macdMa,false);assert.equal(macdFilterDescriptions(native).length,3);
+});

@@ -1,0 +1,3 @@
+filename,strategy,has_bias,total_signals,biased_entry_signals,biased_exit_signals,biased_indicators
+S01SmaTrend.py,S01SmaTrend,False,6,0,0,
+S02DonchianBreakout.py,S02DonchianBreakout,False,6,0,0,

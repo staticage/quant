@@ -1,0 +1,54 @@
+{
+  "arguments": {
+    "strategies": [
+      "S08"
+    ],
+    "exchange": "binance",
+    "pairs": [
+      "BTC/USDT"
+    ],
+    "timeframe": "1d",
+    "timeframe_detail": "5m",
+    "start": "2026-01-01",
+    "end": "2026-10-12",
+    "fee": 0.001,
+    "wallet": 10000.0,
+    "stake": 1000.0,
+    "fast": 20,
+    "slow": 60,
+    "entry": 20,
+    "exit": 10,
+    "macd_fast": 12,
+    "macd_slow": 26,
+    "macd_signal": 9,
+    "prepare_only": false,
+    "skip_download": false,
+    "output_dir": "/Users/alex/quant/user_data/ui-runs/3f06c24f-b3e2-4096-8975-c968e38aad5a"
+  },
+  "source_sha256": {
+    "S08MacdCross.py": "ae337e4dcb7f89985d09b2010ad35a0513d6d0c594440190e3fcfc020904d37f"
+  },
+  "freqtrade_version": "2026.9",
+  "startup_candle_count": 175,
+  "status": "completed",
+  "created_at": "2026-10-12T12:43:54.550939+00:00",
+  "data_coverage": {
+    "BTC/USDT 1d": {
+      "required_start": "2025-07-10T00:00:00+00:00",
+      "end_exclusive": "2026-10-12",
+      "verified_candles": 459,
+      "missing": 0
+    },
+    "BTC/USDT 5m": {
+      "required_start": "2026-01-01T00:00:00+00:00",
+      "end_exclusive": "2026-10-12",
+      "verified_candles": 81792,
+      "missing": 0
+    }
+  },
+  "result_file": "user_data/ui-runs/3f06c24f-b3e2-4096-8975-c968e38aad5a/user_data/backtest_results/backtest-result-2026-10-12_12-44-07.zip",
+  "data_sha256": {
+    "user_data/data/binance/BTC_USDT-5m.feather": "ae9e9357e227f3ea382f9eef3e30c35c88165033df96389a3d1816990184820e",
+    "user_data/data/binance/BTC_USDT-1d.feather": "7f7697faf9f4905745ba88bbe3b6d19b0bc4f7099ec5159417898f34f6324324"
+  }
+}

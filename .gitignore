@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.venv/
+.cache/
+user_data/data/
+user_data/backtest_results/
+user_data/strategies/
+user_data/config.backtest.json
+reports/*.log
+user_data/ui-runs/
+ui/node_modules/
+ui/.next/
+ui/next-env.d.ts

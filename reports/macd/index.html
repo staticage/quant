@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Freqtrade 策略回测</title>
+<style>
+:root{font-family:system-ui,sans-serif;color:#18304a;background:#f3f6fa}*{box-sizing:border-box}body{margin:0}main{max-width:1100px;margin:40px auto;padding:0 24px}h1{font-size:28px;margin-bottom:8px}p{color:#52677d;line-height:1.6}.card{background:white;border:1px solid #dbe3ec;border-radius:12px;padding:24px;margin:20px 0}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}label{display:block;font-size:14px;font-weight:600}input,select{display:block;width:100%;margin-top:7px;padding:10px;border:1px solid #bcc9d7;border-radius:6px;font:inherit}button{background:#1966b4;color:white;border:0;padding:11px 18px;border-radius:6px;font:inherit;cursor:pointer}pre{background:#10243a;color:#e8f2ff;padding:18px;border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}table{width:100%;border-collapse:collapse}th,td{text-align:right;padding:12px 8px;border-bottom:1px solid #e3e8ee;font-variant-numeric:tabular-nums}th:first-child,td:first-child{text-align:left}.scroll{overflow-x:auto}#error{color:#b12525}.note{font-size:13px}.header{display:flex;justify-content:space-between;align-items:center}.badge{background:#e7f0fa;color:#185999;padding:7px 12px;border-radius:16px;font-size:13px}svg{display:none}@media(max-width:700px){main{margin-top:20px;padding:0 12px}.grid{grid-template-columns:1fr 1fr}.card{padding:16px}.header{display:block}h1{font-size:24px}}@media(max-width:420px){.grid{grid-template-columns:1fr}}
+</style></head><body><main>
+<div class="header"><div><h1>策略回测 · 参数与结果</h1><p>调整参数，生成运行命令，比较 Freqtrade 的真实回测结果。</p></div><span class="badge">Freqtrade · uv</span></div>
+<section class="card"><h2>回测参数</h2><form id="form"><div class="grid">
+<label>交易所<select id="exchange"><option value="binance">Binance</option><option value="okx">OKX</option><option value="kraken">Kraken</option></select></label>
+<label>现货交易对（空格分隔）<input id="pairs" value="BTC/USDT" required></label>
+<label>K线周期<select id="timeframe"><option value="1d">日线</option><option value="4h">4小时</option><option value="1h">1小时</option></select></label>
+<label>开始日期（UTC）<input id="start" type="date" value="2025-10-12" required></label>
+<label>结束日期（不含当日，UTC）<input id="end" type="date" value="2026-10-12" required></label>
+<label>单边手续费（%）<input id="fee" type="number" value="0.1" min="0" max="9" step="0.01" required></label>
+<label>初始资金（USDT）<input id="wallet" type="number" value="10000" min="1" required></label>
+<label>单笔投入（USDT）<input id="stake" type="number" value="1000" min="1" required></label>
+<label>选择策略<select id="strategies"><option value="S08">S08 MACD 金叉死叉</option><option value="S01 S02">S01 + S02（分别回测）</option><option value="S01">S01 双均线</option><option value="S02">S02 唐奇安突破</option></select></label>
+<label>S01 短均线窗口<input id="fast" type="number" value="20" min="2" max="399" required></label>
+<label>S01 长均线窗口<input id="slow" type="number" value="60" min="3" max="400" required></label>
+<label>S02 入场窗口<input id="entry" type="number" value="20" min="2" max="400" required></label>
+<label>S02 退出窗口<input id="exit" type="number" value="10" min="1" max="400" required></label>
+<label>MACD 快线 EMA<input id="macd_fast" type="number" value="12" min="2" max="399" required></label>
+<label>MACD 慢线 EMA<input id="macd_slow" type="number" value="26" min="3" max="400" required></label>
+<label>MACD 信号线 EMA<input id="macd_signal" type="number" value="9" min="2" max="100" required></label>
+<label>成交细化周期<select id="timeframe_detail"><option value="5m">5分钟</option><option value="">按信号周期</option></select></label>
+</div><p class="note">窗口单位是K线数。默认现货、最多一笔持仓、固定10%止损；资金配置影响总资金收益率。修改参数只改变运行命令，下方结果保留上次实际测试口径。</p><button type="submit">生成命令</button><p id="error" role="alert"></p></form>
+<pre id="command" aria-label="回测命令"></pre><button id="copy" type="button">复制命令</button><p class="note">在项目根目录的终端运行命令。脚本会复制 repo 策略、下载预热行情、调用 Freqtrade，再更新本页；浏览器不会直接下单或执行回测。</p></section>
+<section class="card"><h2>上次实际回测</h2><p id="context"></p><div class="scroll"><table><thead><tr><th>策略</th><th>交易数</th><th>总资金收益率</th><th>收益 USDT</th><th>胜率</th><th>最大回撤</th></tr></thead><tbody id="results"></tbody></table></div><p id="empty"></p><p class="note">统计直接读取 Freqtrade 结果。日线撮合、止损和手续费按框架假设处理，未另行加入独立滑点模型。此页面不构成盈利预测。</p><details><summary>实际运行参数及源码指纹</summary><pre id="audit"></pre></details></section>
+<footer><p class="note">策略源码：repo/ · 运行副本：user_data/strategies/ · 框架版本：Freqtrade 2026.9</p></footer>
+</main><script>
+const REPORT = {"run": {"arguments": {"strategies": ["S08"], "exchange": "binance", "pairs": ["BTC/USDT"], "timeframe": "1d", "timeframe_detail": "5m", "start": "2026-01-01", "end": "2026-10-12", "fee": 0.001, "wallet": 10000.0, "stake": 1000.0, "fast": 20, "slow": 60, "entry": 20, "exit": 10, "macd_fast": 12, "macd_slow": 26, "macd_signal": 9, "prepare_only": false, "skip_download": false, "output_dir": "/Users/alex/quant/user_data/ui-runs/3f06c24f-b3e2-4096-8975-c968e38aad5a"}, "source_sha256": {"S08MacdCross.py": "ae337e4dcb7f89985d09b2010ad35a0513d6d0c594440190e3fcfc020904d37f"}, "freqtrade_version": "2026.9", "startup_candle_count": 175, "status": "completed", "created_at": "2026-10-12T12:43:54.550939+00:00", "data_coverage": {"BTC/USDT 1d": {"required_start": "2025-07-10T00:00:00+00:00", "end_exclusive": "2026-10-12", "verified_candles": 459, "missing": 0}, "BTC/USDT 5m": {"required_start": "2026-01-01T00:00:00+00:00", "end_exclusive": "2026-10-12", "verified_candles": 81792, "missing": 0}}, "result_file": "user_data/ui-runs/3f06c24f-b3e2-4096-8975-c968e38aad5a/user_data/backtest_results/backtest-result-2026-10-12_12-44-07.zip", "data_sha256": {"user_data/data/binance/BTC_USDT-5m.feather": "ae9e9357e227f3ea382f9eef3e30c35c88165033df96389a3d1816990184820e", "user_data/data/binance/BTC_USDT-1d.feather": "7f7697faf9f4905745ba88bbe3b6d19b0bc4f7099ec5159417898f34f6324324"}}, "strategies": {"S08MacdCross": {"total_trades": 11, "profit_total": 0.013208644731000004, "profit_total_abs": 132.08644731000004, "winrate": 0.36363636363636365, "max_drawdown_account": 0.009914130948499645, "starting_balance": 10000.0, "final_balance": 10132.086447310001, "backtest_start": "2026-01-01 00:00:00", "backtest_end": "2026-10-11 00:00:00"}}};
+const $ = id => document.getElementById(id);
+const fields=['exchange','pairs','timeframe','start','end','fee','wallet','stake','fast','slow','entry','exit','strategies','macd_fast','macd_slow','macd_signal','timeframe_detail'];
+const a=REPORT.run.arguments;
+$('timeframe_detail').value=a.timeframe_detail||'';
+fields.forEach(k=>{if(a[k]!==undefined)$(k).value=k==='fee'?a[k]*100:Array.isArray(a[k])?a[k].join(' '):a[k]});
+function generate(event){if(event)event.preventDefault();$('error').textContent='';const v=Object.fromEntries(fields.map(k=>[k,$(k).value]));
+if(v.start>=v.end || +v.fast>=+v.slow || +v.exit>+v.entry || +v.macd_fast>=+v.macd_slow || +v.stake>+v.wallet*.99){$('error').textContent='请检查日期、窗口和单笔资金（不超过初始资金99%）。';$('command').textContent='';return}
+const quote=s=>"'"+s.replaceAll("'","'\\''")+"'";
+const pairs=v.pairs.trim().split(/\s+/);if(pairs.some(p=>!/^[-A-Za-z0-9]+\/USDT$/.test(p))){$('error').textContent='请输入USDT计价现货，例如BTC/USDT ETH/USDT';$('command').textContent='';return}
+$('command').textContent='uv run python scripts/run_backtest.py \\\n  --strategies '+v.strategies+' \\\n  --exchange '+quote(v.exchange)+' --pairs '+pairs.map(quote).join(' ')+' \\\n  --timeframe '+quote(v.timeframe)+' --start '+quote(v.start)+' --end '+quote(v.end)+' \\\n  --fee '+(+v.fee/100)+' --wallet '+v.wallet+' --stake '+v.stake+' \\\n  --fast '+v.fast+' --slow '+v.slow+' --entry '+v.entry+' --exit '+v.exit+' --macd-fast '+v.macd_fast+' --macd-slow '+v.macd_slow+' --macd-signal '+v.macd_signal+(v.timeframe_detail?' --timeframe-detail '+v.timeframe_detail:'');}
+$('form').addEventListener('submit',generate);$('form').addEventListener('input',()=>{if($('form').checkValidity())generate()});
+$('copy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText($('command').textContent);$('copy').textContent='已复制'}catch{$('error').textContent='浏览器不允许剪贴板访问，请手动复制上方命令。'}});
+const pct=x=>x===null||x===undefined?'—':(x*100).toFixed(2)+'%';
+$('context').textContent=a.exchange+' · '+a.pairs.join(', ')+' · '+a.timeframe+' · '+a.start+' 至 '+a.end+'（UTC，终点不含） · 单边费用 '+(a.fee*100)+'% · 初始资金 '+a.wallet+' / 单笔 '+a.stake+' USDT · 成交细化 '+(a.timeframe_detail||a.timeframe)+(a.strategies.includes('S08')?' · MACD ('+a.macd_fast+','+a.macd_slow+','+a.macd_signal+')':'');
+Object.entries(REPORT.strategies).forEach(([name,s])=>{const tr=document.createElement('tr');[name,s.total_trades,pct(s.profit_total),s.profit_total_abs?.toFixed(2)??'—',pct(s.winrate),pct(s.max_drawdown_account)].forEach(value=>{const td=document.createElement('td');td.textContent=value;tr.append(td)});$('results').append(tr)});
+$('empty').textContent=Object.keys(REPORT.strategies).length?'':'尚未生成成功的真实回测结果。状态：'+REPORT.run.status;
+$('audit').textContent=JSON.stringify(REPORT.run,null,2);generate();
+</script></body></html>

@@ -1,0 +1,36 @@
+{
+  "arguments": {
+    "strategies": [
+      "S01",
+      "S02"
+    ],
+    "exchange": "binance",
+    "pairs": [
+      "BTC/USDT"
+    ],
+    "timeframe": "1d",
+    "start": "2025-10-12",
+    "end": "2026-10-12",
+    "fee": 0.001,
+    "wallet": 10000,
+    "stake": 1000,
+    "fast": 20,
+    "slow": 60,
+    "entry": 20,
+    "exit": 10,
+    "prepare_only": false,
+    "skip_download": false
+  },
+  "source_sha256": {
+    "S01SmaTrend.py": "453b1e2decd3697e742c0f00f7128b8aa30e6f28b34c8f551208ec9d87039025",
+    "S02DonchianBreakout.py": "fcd299b88fadf7a779598108540791cee557d2eca2b760777dc0cf9fdab284d1"
+  },
+  "startup_candle_count": 60,
+  "status": "completed",
+  "created_at": "2026-10-12T10:17:52.199865+00:00",
+  "result_file": "user_data/backtest_results/backtest-result-2026-10-12_10-18-00.zip",
+  "freqtrade_version": "2026.9",
+  "data_sha256": {
+    "user_data/data/binance/BTC_USDT-1d.feather": "de10fa5676c422d0a601955fff176328672f998332c76cecfdd81841d12104f4"
+  }
+}
