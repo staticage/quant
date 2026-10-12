@@ -54,6 +54,32 @@ class BtcTrendEthTests(unittest.TestCase):
         pd.testing.assert_frame_equal(full.iloc[:23],changed.iloc[:23])
         self.assertNotEqual(full.btc_dif_1d.iloc[23],changed.btc_dif_1d.iloc[23])
 
+    def test_btc_sma_matches_s01_relation_and_publishes_once_per_candle(self):
+        s=isolated_strategy('S09BtcTrendEth');s.btc_strategy.value='sma'
+        s.btc_ma_fast.value,s.btc_ma_slow.value=2,3
+        btc=frame([10,10,11,12,9,8,10,12,11,9])
+        eth=frame([2000]*192);eth['date']=pd.date_range('2020-01-02',periods=192,freq='h',tz='UTC')
+        s.dp=SimpleNamespace(get_pair_dataframe=lambda **kwargs:btc)
+        def analyze(d):
+            result=s.populate_indicators(d.copy(),{'pair':'ETH/USDT'})
+            return s.populate_exit_trend(s.populate_entry_trend(result,{}),{})
+        result=analyze(eth)
+        self.assertNotIn('btc_dif_1d',result.columns)
+        self.assertNotIn('dif',result.columns)
+        # 1月3日的完整SMA2/3多头关系在1月3日23:00执行K线收盘才可见。
+        row=result[result.date.eq(pd.Timestamp('2020-01-03 23:00',tz='UTC'))].iloc[0]
+        self.assertEqual(row.btc_sma_fast_1d,10.5)
+        self.assertAlmostEqual(row.btc_sma_slow_1d,31/3)
+        self.assertEqual(row.enter_long,1)
+        for _,day in result.groupby('date_1d'):
+            self.assertLessEqual(int(day.enter_long.sum()),1)
+            self.assertLessEqual(int(day.exit_long.sum()),1)
+        self.assertGreater(result.exit_long.sum(),0)
+        self.assertFalse(((result.enter_long==1)&(result.exit_long==1)).any())
+        for end in [23,24,60,120]:pd.testing.assert_frame_equal(result.iloc[:end],analyze(eth.iloc[:end]))
+        other=eth.copy();other['close']=100
+        self.assertEqual(result.enter_long.tolist(),analyze(other).enter_long.tolist())
+
     def test_reject_wrong_pair_missing_data_and_faster_reference(self):
         s=isolated_strategy('S09BtcTrendEth');d=frame([100]*100)
         with self.assertRaises(ValueError):s.populate_indicators(d,{'pair':'BTC/USDT'})

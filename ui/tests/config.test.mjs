@@ -81,3 +81,20 @@ test('S09 uses BTC cross signals only and trades ETH',async()=>{
     {btcExit:'false'},{btcExit:false},{btcMode:'both'},{btcFast:null},{btcSlow:19},{btcMode:'foo'}])assert.throws(()=>validateConfig({...input,...change}));
   assert.equal(restoreBtcOptions({btc_exit:false,btc_fast:19}).btcExit,false);
 });
+
+test('BTC strategy choice and moving-average windows are persisted and reach native CLI',async()=>{
+  const {restoreBtcOptions}=await import('../lib/config.mjs');
+  const c=validateConfig({...defaults,strategies:['S09'],pairs:['ETH/USDT'],timeframe:'1h',btcStrategy:'sma',btcMaFast:50,btcMaSlow:200});
+  const a=runnerArguments(c,'/work/user_data/ui-runs/test');
+  assert.equal(a[a.indexOf('--btc-strategy')+1],'sma');assert.equal(a[a.indexOf('--btc-ma-fast')+1],'50');assert.equal(a[a.indexOf('--btc-ma-slow')+1],'200');
+  assert.equal(restoreBtcOptions({}).btcStrategy,'macd');
+  assert.equal(restoreBtcOptions({btc_strategy:'sma',btc_ma_fast:50}).btcMaFast,50);
+  for(const patch of [{btcStrategy:'fake'},{btcMaFast:200},{btcMaSlow:2},{btcMaFast:null}])assert.throws(()=>validateConfig({...c,...patch}));
+});
+test('shared shortcut specifications include canonical MACD and custom detection',async()=>{
+  const {MACD_PRESETS,MA_PRESETS,detectPreset}=await import('../lib/parameter-presets.mjs');
+  assert.deepEqual(MACD_PRESETS.map(p=>p.values),[[6,12,9],[12,26,9],[19,39,9]]);
+  assert.equal(detectPreset(MACD_PRESETS,[12,26,9]),'medium');assert.equal(detectPreset(MACD_PRESETS,[10,30,8]),'custom');
+  assert.equal(detectPreset(MA_PRESETS,[20,60]),'medium');
+  for(const p of MACD_PRESETS){const c=validateConfig({...defaults,strategies:['S09'],pairs:['ETH/USDT'],timeframe:'1h',btcFast:p.values[0],btcSlow:p.values[1],btcSignal:p.values[2]});assert.deepEqual([c.btcFast,c.btcSlow,c.btcSignal],p.values);}
+});

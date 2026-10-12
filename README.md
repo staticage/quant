@@ -219,3 +219,30 @@ Freqtrade的同步及异步CCXT HTTPS请求显式使用`http://127.0.0.1:7890`�
 配置位于config/backtest.json的ccxt_config/ccxt_async_config.httpsProxy；
 运行脚本复制到每次任务配置，切换交易所时也保留代理。代理服务需已启动。
 只影响项目公开行情请求，不修改系统网络设置，不连接交易密钥。
+
+## 可复用策略参数与BTC策略选择
+
+S09增加“BTC信号策略”单选下拉框，目前仅提供已实现的MACD与双SMA均线。
+默认仍为MACD，不改变此前MACD回测的规则；历史缺btc_strategy字段时按MACD读取。
+
+- MACD快捷组合：短线6/12/9、中线12/26/9、长线19/39/9，支持自定义。
+  相同组件用于S08主周期、S08长周期过滤及S09的BTC MACD。
+- 双均线快捷组合：短线5/20、中线20/60、长线50/200，支持自定义。
+  相同组件用于S01与S09的BTC双均线。快捷参数仅用于研究，不代表已经比较过收益。
+- S09双SMA规则沿用S01：BTC短SMA>长SMA时买ETH，<=时退出；
+  每根已结束BTC K线判断一次，止损后下一根BTC仍多头时可重新入场。
+  这不同于MACD等待下一次金叉，不把两者都描述为相同交叉策略。
+- S02通道参数也已独立成组件。UI组件在ui/components/strategy-parameters.js，
+  快捷参数定义在ui/lib/parameter-presets.mjs。每个实例有独立id与值，不互相覆盖。
+- BTC策略类型与对应窗口写入任务配置、原生参数JSON与报告，历史还原对应参数。
+
+选择S09双均线的命令行示例：
+
+```sh
+UV_CACHE_DIR=/Users/alex/quant/.cache/uv uv run python scripts/run_backtest.py \
+  --strategies S09 --pairs ETH/USDT --timeframe 1h --timeframe-detail 5m \
+  --start 2026-01-01 --end 2026-10-12 \
+  --btc-strategy sma --btc-timeframe 1d --btc-ma-fast 20 --btc-ma-slow 60
+```
+
+双SMA模式本次只完成代码与原生加载检查，没有运行真实收益回测；此前S09报告均为MACD模式。

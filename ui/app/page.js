@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { Alert, Badge, Button, Card, Checkbox, Collapse, ConfigProvider, Empty, Form, Input, InputNumber, Menu, Select, Skeleton, Spin, Switch, Table, Tag } from 'antd';
+import { ParameterField, MacdParameters, MovingAverageParameters, ChannelParameters } from '../components/strategy-parameters';
 import zhCN from 'antd/locale/zh_CN';
 import { ArrowLeftOutlined, ArrowRightOutlined, CheckCircleOutlined, ClockCircleOutlined, DatabaseOutlined, ExperimentOutlined, HistoryOutlined, PlayCircleOutlined, ReloadOutlined, SearchOutlined, SlidersOutlined } from '@ant-design/icons';
 import { catalog, defaults, validateConfig, restoreMacdOptions, macdFilterDescriptions, restoreBtcOptions } from '../lib/config.mjs';
@@ -11,12 +12,11 @@ const percent=value=>value==null?'—':`${(value*100).toFixed(2)}%`;
 const money=value=>value==null?'—':Number(value).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2});
 const localTime=value=>new Date(value).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
 const busy=job=>['queued','running'].includes(job?.status);
-const presets={short:[6,12,9],medium:[12,26,9],long:[19,39,9]};
 const theme={token:{colorPrimary:'#4965e8',colorSuccess:'#16866c',colorError:'#cb5360',colorText:'#243049',colorTextSecondary:'#8290a5',colorBorder:'#e1e6ef',colorBgLayout:'#f5f7fb',borderRadius:9,fontFamily:'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',controlHeight:42,fontSize:13},components:{Menu:{itemHeight:46,itemSelectedBg:'#eef1ff',itemSelectedColor:'#4965e8',itemBorderRadius:9},Card:{paddingLG:26},Table:{headerBg:'#f8f9fc',cellPaddingBlock:18}}};
 async function api(url,options) {const response=await fetch(url,{cache:'no-store',...options});const body=await response.json();if(!response.ok)throw new Error(body.error||'请求失败');return body;}
 function Status({status}) {return <Tag bordered={false} color={status==='completed'?'success':status==='failed'?'error':busy({status})?'processing':'default'}>{statusNames[status]||status}</Tag>}
 function Metric({label,value,positive}) {return <div className="metric"><span>{label}</span><strong className={positive===undefined?'':positive?'positive':'negative'}>{value}</strong></div>}
-function Field({label,id,children,wide=false}) {return <Form.Item label={label} htmlFor={id} className={wide?'wide':''}>{children}</Form.Item>}
+const Field=ParameterField;
 
 function Enhancement({label,description,enabled,onChange,children}) {
   return <div className={`enhancement ${enabled?'enabled':''}`}><div className="enhancement-heading"><div><strong>{label}</strong><p>{description}</p></div><Switch checked={enabled} onChange={onChange} aria-label={`启用${label}`}/></div>{enabled&&<div className="enhancement-fields">{children}</div>}</div>;
@@ -25,7 +25,7 @@ function Enhancement({label,description,enabled,onChange,children}) {
 const tradeTime=value=>value?new Date(value).toLocaleString('zh-CN',{timeZone:'UTC',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}):'—';
 const tradeDateCell=value=>value?<div>{tradeTime(value).split(' ')[0]}<span className="trade-secondary">{tradeTime(value).split(' ')[1]}</span></div>:'—';
 const rate=value=>value==null?'—':Number(value).toLocaleString('zh-CN',{maximumFractionDigits:8});
-const reasons={macd_death_cross:'MACD 死叉',stop_loss:'固定止损',force_exit:'回测结束强制退出',exit_signal:'策略退出信号',roi:'ROI 止盈',trailing_stop_loss:'移动止损',sma_down:'均线转弱',channel_exit:'跌破通道',return_to_mean:'回到布林中轨',rsi_or_trend_exit:'RSI 或趋势退出',nonpositive_monthly_momentum:'月末动量转弱',hold_timeout:'持仓超时',btc_macd_death_cross:'BTC MACD 死叉',btc_trend_lost:'BTC 趋势转弱',eth_macd_death_cross:'ETH MACD 死叉'};
+const reasons={macd_death_cross:'MACD 死叉',stop_loss:'固定止损',force_exit:'回测结束强制退出',exit_signal:'策略退出信号',roi:'ROI 止盈',trailing_stop_loss:'移动止损',sma_down:'均线转弱',channel_exit:'跌破通道',return_to_mean:'回到布林中轨',rsi_or_trend_exit:'RSI 或趋势退出',nonpositive_monthly_momentum:'月末动量转弱',hold_timeout:'持仓超时',btc_sma_down:'BTC 双均线转弱',btc_macd_death_cross:'BTC MACD 死叉',btc_trend_lost:'BTC 趋势转弱',eth_macd_death_cross:'ETH MACD 死叉'};
 function Trades({entries}) {
   const missing=entries.some(([,s])=>!Array.isArray(s.trades));
   const rows=entries.flatMap(([strategy,s])=>(s.trades||[]).map((t,i)=>({...t,strategy,key:`${strategy}-${i}`}))).sort((a,b)=>(a.open_timestamp??Date.parse(a.open_date))-(b.open_timestamp??Date.parse(b.open_date)));
@@ -58,7 +58,7 @@ function Results({detail,loading,error}) {
     <div className="result-heading"><div><h3>{c.strategies.map(s=>`${s} · ${names[s]}`).join(' / ')}</h3><p>{c.exchange.toUpperCase()} · {c.pairs.join(' / ')} · {c.start} — {c.end}</p></div><span className="result-date">{localTime(job.createdAt)}</span></div>
     <div className="context-tags"><Tag>{c.strategies.includes('S09')?'ETH执行':'信号'} {c.timeframe}</Tag><Tag>成交 {c.timeframeDetail||c.timeframe_detail||c.timeframe}</Tag>{c.strategies.includes('S08')&&<Tag>MACD {c.macdFast??c.macd_fast??12} / {c.macdSlow??c.macd_slow??26} / {c.macdSignal??c.macd_signal??9}</Tag>}<Tag>手续费 {percent(c.fee)}</Tag></div>
     {c.strategies.includes('S08')&&<div className="filter-tags">{macdFilterDescriptions(c).length?macdFilterDescriptions(c).map(label=><Tag key={label}>{label}</Tag>):<span>增强选项全部关闭 · 基础MACD</span>}</div>}
-    {c.strategies.includes('S09')&&<div className="filter-tags"><Tag>BTC/USDT {restoreBtcOptions(c).btcTimeframe} · MACD {restoreBtcOptions(c).btcFast}/{restoreBtcOptions(c).btcSlow}/{restoreBtcOptions(c).btcSignal}</Tag>{restoreBtcOptions(c).btcMode==='cross'?<Tag>BTC金叉买ETH · BTC死叉卖ETH</Tag>:<><Tag>旧规则：BTC过滤＋ETH MACD</Tag><Tag>ETH MACD {c.macdFast??c.macd_fast??12}/{c.macdSlow??c.macd_slow??26}/{c.macdSignal??c.macd_signal??9}</Tag><Tag>BTC转弱退出：{restoreBtcOptions(c).btcExit?'开启':'关闭'}</Tag></>}</div>}
+    {c.strategies.includes('S09')&&<div className="filter-tags"><Tag>BTC/USDT {restoreBtcOptions(c).btcTimeframe} · {restoreBtcOptions(c).btcStrategy==='sma'?`SMA ${restoreBtcOptions(c).btcMaFast}/${restoreBtcOptions(c).btcMaSlow}`:`MACD ${restoreBtcOptions(c).btcFast}/${restoreBtcOptions(c).btcSlow}/${restoreBtcOptions(c).btcSignal}`}</Tag>{restoreBtcOptions(c).btcMode==='cross'?<Tag>{restoreBtcOptions(c).btcStrategy==='sma'?'BTC短均线>长均线买ETH · ≤退出':'BTC金叉买ETH · BTC死叉卖ETH'}</Tag>:<><Tag>旧规则：BTC过滤＋ETH MACD</Tag><Tag>ETH MACD {c.macdFast??c.macd_fast??12}/{c.macdSlow??c.macd_slow??26}/{c.macdSignal??c.macd_signal??9}</Tag><Tag>BTC转弱退出：{restoreBtcOptions(c).btcExit?'开启':'关闭'}</Tag></>}</div>}
     {busy(job)?<div className="running-state"><Spin/><div><strong>正在执行回测</strong><p>准备行情、计算信号并模拟成交，完成后自动显示结果。</p></div></div>:job.status==='failed'?<Alert type="error" showIcon title="本次回测未完成" description={job.error||'请展开运行日志查看原因。'}/>:stats?<>
       {single&&<div className="metrics"><Metric label="总资金收益率" value={percent(single.profit_total)} positive={single.profit_total>=0}/><Metric label="收益 · USDT" value={money(single.profit_total_abs)} positive={single.profit_total_abs>=0}/><Metric label="最大回撤" value={percent(single.max_drawdown_account)}/><Metric label="交易次数 / 胜率" value={`${single.total_trades} / ${percent(single.winrate)}`}/></div>}
       {!single&&<Table size="small" pagination={false} scroll={{x:700}} rowKey="name" dataSource={entries.map(([name,s])=>({...s,name}))} columns={[{title:'策略',dataIndex:'name',render:name=>names[name.slice(0,3)]||name},{title:'交易数',dataIndex:'total_trades',align:'right'},{title:'总资金收益率',dataIndex:'profit_total',align:'right',render:percent},{title:'收益 USDT',dataIndex:'profit_total_abs',align:'right',render:money},{title:'最大回撤',dataIndex:'max_drawdown_account',align:'right',render:percent},{title:'胜率',dataIndex:'winrate',align:'right',render:percent}]}/>}
@@ -74,7 +74,6 @@ export default function Dashboard() {
   const [historyId,setHistoryId]=useState(null);
   const [runId,setRunId]=useState(null);
   const [config,setConfig]=useState({...defaults});
-  const [preset,setPreset]=useState('medium');
   const [pairText,setPairText]=useState('BTC/USDT');
   const [feeText,setFeeText]=useState(0.1);
   const [jobs,setJobs]=useState([]);
@@ -119,8 +118,9 @@ export default function Dashboard() {
   const set=(key,value)=>setConfig(old=>({...old,[key]:value}));
   function chooseStrategy(id) {setConfig(old=>({...old,strategies:[id],timeframe:id==='S05'?'1d':id==='S09'?'1h':old.timeframe,...(id==='S09'?{btcMode:'cross',btcExit:true}:{}),...(id!=='S08'?{macdMtf:false,macdRsi:false,macdMa:false,macdVolume:false}:{})}));if(id==='S09')setPairText('ETH/USDT');setError('')}
   function toggleMtf(value) {setConfig(old=>({...old,macdMtf:value,timeframe:value&&(old.timeframe==='1d'||old.timeframe===old.macdTrendTimeframe)?'1h':old.timeframe}))}
-  function setMacd(key,value) {set(key,value);setPreset('custom')}
-  function choosePreset(value) {setPreset(value);const p=presets[value];if(p)setConfig(old=>({...old,macdFast:p[0],macdSlow:p[1],macdSignal:p[2]}))}
+  function updateParameters(mapping,values) {
+    setConfig(old=>({...old,...Object.fromEntries(Object.entries(mapping).map(([name,key])=>[key,values[name]]))}));
+  }
   async function run() {
     setError('');setSubmitting(true);
     try {
@@ -133,7 +133,6 @@ export default function Dashboard() {
     const next={...defaults,...c,...restoreMacdOptions(c),...restoreBtcOptions(c),strategies:[c.strategies[0]],timeframeDetail:c.timeframeDetail??c.timeframe_detail??'',macdFast:c.macdFast??c.macd_fast??12,macdSlow:c.macdSlow??c.macd_slow??26,macdSignal:c.macdSignal??c.macd_signal??9,skipDownload:c.skipDownload??c.skip_download??false};
     if(next.strategies[0]==='S09'){next.btcMode='cross';next.btcExit=true;}
     setConfig(next);setPairText(next.pairs.join(' '));setFeeText(next.fee*100);
-    setPreset(Object.entries(presets).find(([,p])=>p[0]===next.macdFast&&p[1]===next.macdSlow&&p[2]===next.macdSignal)?.[0]||'custom');
     if(!active){setRunId(null);sessionStorage.removeItem('quant-current-run')}
     setError('');navigate('run');
   }
@@ -161,16 +160,19 @@ export default function Dashboard() {
                 <Field label="成交细化周期" id="timeframeDetail"><Select id="timeframeDetail" value={config.timeframeDetail} onChange={value=>set('timeframeDetail',value)} options={[{value:'5m',label:'5 分钟 · 5m'},{value:'',label:'按信号周期'}]}/></Field>
               </div><p className="field-note">指标按信号周期计算，细周期用于撮合与止损。多个交易对可用空格分隔。</p>
               <div className="form-divider"><span>策略参数</span></div>
-              {config.strategies[0]==='S08'?<><Field label="MACD 参数预设" id="preset"><Select id="preset" value={preset} onChange={choosePreset} options={[{value:'short',label:'短线 (6,12,9)'},{value:'medium',label:'中线 (12,26,9) · 标准设置'},{value:'long',label:'长线 (19,39,9)'},{value:'custom',label:'自定义'}]}/></Field><div className="form-grid three">{[['macdFast','快线 EMA',2,399],['macdSlow','慢线 EMA',3,400],['macdSignal','信号线 EMA',2,100]].map(([key,label,min,max])=><Field key={key} label={label} id={key}><InputNumber id={key} min={min} max={max} precision={0} value={config[key]} onChange={value=>setMacd(key,value)} controls={false}/></Field>)}</div></>:config.strategies[0]==='S01'?<div className="form-grid">{number('fast','短均线窗口',2,399)}{number('slow','长均线窗口',3,400)}</div>:config.strategies[0]==='S02'?<div className="form-grid">{number('entry','入场通道窗口',2,400)}{number('exit','退出通道窗口',1,400)}</div>:config.strategies[0]==='S09'?null:<p className="field-note fixed-parameters">此策略使用源码默认参数。</p>}
-              {config.strategies[0]==='S09'&&<div className="enhancements"><div className="form-divider"><span>BTC 入场与退出信号 · 只交易 ETH</span></div><p className="field-note enhancement-note">BTC MACD金叉买ETH，BTC MACD死叉卖ETH。ETH不计算方向信号；10%固定止损仍有效。</p>
+              {config.strategies[0]==='S08'?<MacdParameters idPrefix="s08-macd" values={{fast:config.macdFast,slow:config.macdSlow,signal:config.macdSignal}} onChange={values=>updateParameters({fast:'macdFast',slow:'macdSlow',signal:'macdSignal'},values)}/>:config.strategies[0]==='S01'?<MovingAverageParameters idPrefix="s01-ma" values={{fast:config.fast,slow:config.slow}} onChange={values=>updateParameters({fast:'fast',slow:'slow'},values)}/>:config.strategies[0]==='S02'?<ChannelParameters idPrefix="s02-channel" values={{entry:config.entry,exit:config.exit}} onChange={values=>updateParameters({entry:'entry',exit:'exit'},values)}/>:config.strategies[0]==='S09'?null:<p className="field-note fixed-parameters">此策略使用源码默认参数。</p>}
+              {config.strategies[0]==='S09'&&<div className="enhancements"><div className="form-divider"><span>BTC 入场与退出信号 · 只交易 ETH</span></div><p className="field-note enhancement-note">所选BTC策略同时决定ETH入场和退出。ETH不计算方向信号，10%固定止损仍有效。</p>
+                <Field label="BTC 信号策略" id="btcStrategy"><Select id="btcStrategy" value={config.btcStrategy} onChange={value=>set('btcStrategy',value)} options={[{value:'macd',label:'MACD · 金叉买入 / 死叉退出'},{value:'sma',label:'双均线 · SMA趋势关系'}]}/></Field>
                 <Field label="BTC 信号周期" id="btcTimeframe"><Select id="btcTimeframe" value={config.btcTimeframe} onChange={value=>setConfig(old=>({...old,btcTimeframe:value,timeframe:({'1h':60,'4h':240,'1d':1440}[old.timeframe]>{'1h':60,'4h':240,'1d':1440}[value])?'1h':old.timeframe}))} options={[{value:'1d',label:'日线 · 1d'},{value:'4h',label:'4 小时 · 4h'},{value:'1h',label:'1 小时 · 1h'}]}/></Field>
-                <div className="form-grid three">{number('btcFast','BTC 快线 EMA',2,399)}{number('btcSlow','BTC 慢线 EMA',3,400)}{number('btcSignal','BTC 信号线 EMA',2,100)}</div><p className="field-note">默认BTC MACD (12,26,9)。BTC K线收盘后触发一次，ETH执行周期只负责信号对齐，5分钟周期细化成交。脚本分别下载ETH成交行情和BTC信号行情。</p>
+                {config.btcStrategy==='macd'?<MacdParameters idPrefix="s09-btc-macd" label="BTC MACD 参数预设" values={{fast:config.btcFast,slow:config.btcSlow,signal:config.btcSignal}} onChange={values=>updateParameters({fast:'btcFast',slow:'btcSlow',signal:'btcSignal'},values)}/>:<MovingAverageParameters idPrefix="s09-btc-ma" label="BTC 双均线参数预设" values={{fast:config.btcMaFast,slow:config.btcMaSlow}} onChange={values=>updateParameters({fast:'btcMaFast',slow:'btcMaSlow'},values)}/>}
+                <p className="field-note">{config.btcStrategy==='macd'?'BTC MACD金叉买ETH、死叉卖ETH；止损后等待下次金叉。':'BTC短SMA>长SMA买ETH，短SMA≤长SMA退出；止损后，下一根BTC K线仍多头可重新入场。'}每根已结束BTC K线只判断一次，ETH执行周期只负责对齐，5分钟细化成交。</p>
+
               </div>}
               {config.strategies[0]==='S08'&&<div className="enhancements"><div className="form-divider"><span>策略增强 · 可选</span></div><p className="field-note enhancement-note">默认全部关闭。开启的条件须与金叉同时满足，只过滤入场，死叉和10%止损仍有效。</p>
                 <Enhancement label="多时间框架" description="长周期判断趋势，短周期MACD金叉找入场。" enabled={config.macdMtf} onChange={toggleMtf}>
                   <div className="form-grid"><Field label="长周期趋势" id="macdTrendTimeframe"><Select id="macdTrendTimeframe" value={config.macdTrendTimeframe} onChange={value=>setConfig(old=>({...old,macdTrendTimeframe:value,timeframe:value==='4h'?'1h':old.timeframe}))} options={[{value:'1d',label:'日线 · 1d'},{value:'4h',label:'4 小时 · 4h'}]}/></Field>
                   <Field label="趋势允许做多的条件" id="macdTrendMode"><Select id="macdTrendMode" value={config.macdTrendMode} onChange={value=>set('macdTrendMode',value)} options={[{value:'dif_dea',label:'DIF > DEA'},{value:'zero',label:'DIF > 0'},{value:'both',label:'DIF > DEA 且 DIF > 0'}]}/></Field></div>
-                  <div className="form-grid three">{number('macdTrendFast','长周期快线',2,399)}{number('macdTrendSlow','长周期慢线',3,400)}{number('macdTrendSignal','长周期信号线',2,100)}</div>
+                  <MacdParameters idPrefix="s08-trend-macd" label="长周期MACD参数预设" values={{fast:config.macdTrendFast,slow:config.macdTrendSlow,signal:config.macdTrendSignal}} onChange={values=>updateParameters({fast:'macdTrendFast',slow:'macdTrendSlow',signal:'macdTrendSignal'},values)}/>
                   <p className="field-note">短周期沿用上方信号周期与MACD参数；长周期只读取已结束K线。关闭开关不自动修改短周期，请按需调整。首次启用请关闭行情复用。</p>
                 </Enhancement>
                 <Enhancement label="RSI 区间过滤" description="金叉时RSI在指定区间内才允许入场。" enabled={config.macdRsi} onChange={value=>set('macdRsi',value)}>

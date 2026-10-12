@@ -62,6 +62,9 @@ def main():
     parser.add_argument("--macd-volume", action="store_true")
     parser.add_argument("--macd-volume-window", type=int, default=20)
     parser.add_argument("--macd-volume-multiplier", type=float, default=1.2)
+    parser.add_argument("--btc-strategy", choices=["macd", "sma"], default="macd")
+    parser.add_argument("--btc-ma-fast", type=int, default=20)
+    parser.add_argument("--btc-ma-slow", type=int, default=60)
     parser.add_argument("--btc-timeframe", choices=["1h", "4h", "1d"], default="1d")
     parser.add_argument("--btc-mode", choices=["cross"], default="cross")
     parser.add_argument("--btc-fast", type=int, default=12)
@@ -106,7 +109,7 @@ def main():
         parser.error("均线/均量窗口需2~400，成交量倍数需0.1~10")
     if "S09" in args.strategies:
         if not args.btc_exit:
-            parser.error("S09以BTC死叉退出，不支持关闭BTC退出信号")
+            parser.error("S09按所选BTC策略退出，不支持关闭BTC退出信号")
         if args.pairs != ["ETH/USDT"]:
             parser.error("S09只交易ETH/USDT；BTC/USDT仅作为参考行情")
         if minutes_by_tf[args.btc_timeframe] < minutes_by_tf[args.timeframe]:
@@ -114,6 +117,9 @@ def main():
     if not 2 <= args.btc_fast < args.btc_slow <= 400 or not 2 <= args.btc_signal <= 100:
         parser.error("BTC MACD窗口无效")
     # 主周期和长周期使用框架统一startup_candle_count；下载与审计都按这一数量预热。
+    if not 2 <= args.btc_ma_fast < args.btc_ma_slow <= 400:
+        parser.error("BTC双均线需2<=短窗口<长窗口<=400")
+    btc_warmup = 5 * (args.btc_slow + args.btc_signal) if args.btc_strategy == "macd" else args.btc_ma_slow
     macd_warmup = max(5 * (args.macd_slow + args.macd_signal),
                       5 * (args.macd_trend_slow + args.macd_trend_signal) if args.macd_mtf else 0,
                       5 * args.macd_rsi_period + 1 if args.macd_rsi else 0,
@@ -134,7 +140,7 @@ def main():
                   args.entry + 1 if "S02" in args.strategies else 0,
                   20 if "S03" in args.strategies else 0,
                   macd_warmup if "S08" in args.strategies else 0,
-                  5 * (args.btc_slow + args.btc_signal) if "S09" in args.strategies else 0,
+                  btc_warmup if "S09" in args.strategies else 0,
                   400 if {"S04", "S05"}.intersection(args.strategies) else 0])
     # 对所选策略统一预热长度，避免比较时评估起点不同。
     config["startup_candle_count"] = warmup
@@ -153,7 +159,8 @@ def main():
                                "ma_period": args.macd_ma_period, "volume_enabled": args.macd_volume,
                                "volume_window": args.macd_volume_window,
                                "volume_multiplier": args.macd_volume_multiplier}},
-              "S09": {"buy": {"btc_timeframe": args.btc_timeframe, "btc_fast": args.btc_fast,
+              "S09": {"buy": {"btc_strategy": args.btc_strategy, "btc_ma_fast": args.btc_ma_fast,
+                               "btc_ma_slow": args.btc_ma_slow, "btc_timeframe": args.btc_timeframe, "btc_fast": args.btc_fast,
                                "btc_slow": args.btc_slow, "btc_signal": args.btc_signal}}}
     copied = {}
     for strategy_id in args.strategies:
