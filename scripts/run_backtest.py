@@ -72,6 +72,11 @@ def main():
     parser.add_argument("--btc-fast", type=int, default=12)
     parser.add_argument("--btc-slow", type=int, default=26)
     parser.add_argument("--btc-signal", type=int, default=9)
+    parser.add_argument("--btc-atr-enabled", action="store_true", help="BTC过热时降低ETH初始仓位，默认关闭")
+    parser.add_argument("--btc-atr-period", type=int, default=14)
+    parser.add_argument("--btc-atr-ema-period", type=int, default=20)
+    parser.add_argument("--btc-atr-threshold", type=float, default=2)
+    parser.add_argument("--btc-atr-stake-percent", type=float, default=30)
     parser.add_argument("--btc-exit", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--prepare-only", action="store_true", help="只复制策略、生成配置，不联网回测")
     parser.add_argument("--prepare-data-only", action="store_true", help="只补齐数据库行情并导出，不运行回测")
@@ -123,7 +128,14 @@ def main():
     # 主周期和长周期使用框架统一startup_candle_count；下载与审计都按这一数量预热。
     if not 2 <= args.btc_ma_fast < args.btc_ma_slow <= 400:
         parser.error("BTC双均线需2<=短窗口<长窗口<=400")
+    if args.btc_atr_enabled and "S09" not in args.strategies:
+        parser.error("BTC ATR偏离控制仅适用于S09")
+    if not (2 <= args.btc_atr_period <= 100 and 2 <= args.btc_atr_ema_period <= 400
+            and 0.1 <= args.btc_atr_threshold <= 20 and 1 <= args.btc_atr_stake_percent <= 100):
+        parser.error("BTC ATR参数无效：ATR 2~100，EMA 2~400，阈值0.1~20，仓位比例1~100%")
     btc_warmup = 5 * (args.btc_slow + args.btc_signal) if args.btc_strategy == "macd" else args.btc_ma_slow
+    if args.btc_atr_enabled:
+        btc_warmup = max(btc_warmup, 5 * max(args.btc_atr_period, args.btc_atr_ema_period) + 1)
     macd_warmup = max(5 * (args.macd_slow + args.macd_signal),
                       5 * (args.macd_trend_slow + args.macd_trend_signal) if args.macd_mtf else 0,
                       5 * args.macd_rsi_period + 1 if args.macd_rsi else 0,
@@ -169,7 +181,10 @@ def main():
                                "volume_multiplier": args.macd_volume_multiplier}},
               "S09": {"buy": {"btc_strategy": args.btc_strategy, "btc_ma_fast": args.btc_ma_fast,
                                "btc_ma_slow": args.btc_ma_slow, "btc_timeframe": args.btc_timeframe, "btc_fast": args.btc_fast,
-                               "btc_slow": args.btc_slow, "btc_signal": args.btc_signal}}}
+                               "btc_slow": args.btc_slow, "btc_signal": args.btc_signal,
+                               "btc_atr_enabled": args.btc_atr_enabled, "btc_atr_period": args.btc_atr_period,
+                               "btc_atr_ema_period": args.btc_atr_ema_period, "btc_atr_threshold": args.btc_atr_threshold,
+                               "btc_atr_stake_percent": args.btc_atr_stake_percent}}}
     copied = {}
     for strategy_id in args.strategies:
         name = NAMES[strategy_id]

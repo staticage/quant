@@ -304,3 +304,22 @@ QUANT_TEST_POSTGRES=1 uv run python -m unittest discover -s tests -p test_market
 脚本支持 `--stoploss-percent 5`，将其转换为Freqtrade原生配置 `stoploss=-0.05`；
 由框架覆盖策略类的默认止损并执行。CLI省略该选项时沿用各策略源码默认值。
 止损不是亏损封顶承诺，实际损失还受手续费及跳空影响；本功能不改变买卖信号。
+
+## S09 可选 ATR 偏离控制
+
+S09的MACD及双均线模式都支持“ATR偏离控制”，默认关闭，旧记录恢复为关闭。
+开启后按BTC信号周期计算 `(BTC收盘价-EMA)/ATR`，超过阈值时仍按BTC买入信号交易ETH，
+但初始投入缩小为计划金额的指定比例。默认EMA20、ATR14、阈值2、过热投入30%；
+阈值相等时正常投入。EMA/ATR尚未就绪或ATR为0时不入场。
+
+退出与用户配置的固定止损保持原规则；没有ATR止损、等待回落或自动加仓。
+减仓标签随已结束BTC信号K线生成，由Freqtrade原生custom_stake_amount执行；
+若缩小后的金额低于交易所最小下单额则跳过，不自动放大试探仓位。
+此控制不识别未来顶部，也不判断ETH自身是否过热；未验证收益改善。
+
+命令行选项：`--btc-atr-enabled --btc-atr-period 14 --btc-atr-ema-period 20
+--btc-atr-threshold 2 --btc-atr-stake-percent 30`。ATR周期2~100、EMA周期2~400、
+阈值0.1~20、仓位比例1~100%，仅适用于S09；未传开关时完全沿用原始仓位/信号。
+预热自动覆盖EMA与ATR递归初始化，行情继续通过PostgreSQL复用和缺口补齐。
+参数保存到任务/运行审计，结果标签显示ATR设置；交易详情的入场信号带
+`_atr_reduced`表示本次按比例减仓，实际投入金额可展开交易明细查看。

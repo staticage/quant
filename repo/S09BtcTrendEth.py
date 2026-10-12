@@ -9,6 +9,14 @@ SMA为含当根收盘的N根算术均值，未满窗口为NaN；预热取长均�
 这与MACD只等待下一个金叉的事件规则不同，界面和历史需记录所选策略。
 DIF=EMA(BTC.close,fast)-EMA(BTC.close,slow)，DEA=EMA(DIF,signal)，柱体=2*(DIF-DEA)。
 使用TA-Lib初始化，MACD预热5*(slow+signal)根；ETH不计算MACD或其他方向指标。
+可选ATR偏离控制默认关闭：在BTC信号周期计算EMA(默认20)、ATR(默认14)，
+偏离=(BTC.close-EMA)/ATR，超过默认2倍阈值时仍入场，但仅投入计划金额的默认30%。
+ATR使用TA-Lib的Wilder平滑，TR=max(high-low,abs(high-prev_close),abs(low-prev_close))。
+开启时EMA/ATR未就绪或ATR<=0不入场；预热至少5*max(EMA周期,ATR周期)+1。
+偏离只改变初始仓位，不新增趋势过滤、回落等待、加仓或ATR止损；退出/固定止损不变。
+减仓标签在已结束BTC信号K线上确定，通过原生custom_stake_amount执行，避免读取未来行情。
+小额仓位低于交易所最小下单金额时跳过，不能自动放大仓位；框架仍可按精度调整实际投入。
+该选项降低追高金额，但不能识别顶部或保证盈利，也不能识别ETH自身过热。
 BTC周期可选1h/4h/1d，ETH执行周期不得长于BTC信号周期；默认1h执行、5m成交细化。
 在BTC原周期先计算交叉事件，再按BTC K线结束时间合并到ETH执行K线。
 一个BTC事件只在其首次可见的ETH执行K线上触发一次，不能在填充后的小时线重复买入。
@@ -24,7 +32,7 @@ MACD止损后等待新金叉；双均线可在下一根BTC多头K线重入，均
 """
 import talib.abstract as ta
 from pandas import DataFrame, Timedelta
-from freqtrade.strategy import (IStrategy, IntParameter, CategoricalParameter,
+from freqtrade.strategy import (IStrategy, IntParameter, CategoricalParameter, BooleanParameter, DecimalParameter,
                                 merge_informative_pair, timeframe_to_minutes)
 
 
@@ -47,6 +55,11 @@ class S09BtcTrendEth(IStrategy):
     btc_fast = IntParameter(2, 399, default=12, space="buy", optimize=False)
     btc_slow = IntParameter(3, 400, default=26, space="buy", optimize=False)
     btc_signal = IntParameter(2, 100, default=9, space="buy", optimize=False)
+    btc_atr_enabled = BooleanParameter(default=False, space="buy", optimize=False)
+    btc_atr_period = IntParameter(2, 100, default=14, space="buy", optimize=False)
+    btc_atr_ema_period = IntParameter(2, 400, default=20, space="buy", optimize=False)
+    btc_atr_threshold = DecimalParameter(0.1, 20, default=2.0, decimals=2, space="buy", optimize=False)
+    btc_atr_stake_percent = DecimalParameter(1, 100, default=30, decimals=2, space="buy", optimize=False)
 
     def informative_pairs(self):
         """声明BTC参考行情，同一交易所，周期不短于ETH信号周期。"""
@@ -89,6 +102,12 @@ class S09BtcTrendEth(IStrategy):
             indicator_columns = ["btc_sma_fast", "btc_sma_slow"]
         else:
             raise ValueError("BTC信号策略只支持macd或sma")
+        if self.btc_atr_enabled.value:
+            # 仅在BTC原周期计算，以同一已收盘K线上的偏离确定本次ETH入场金额。
+            btc["btc_atr"] = ta.ATR(btc, timeperiod=self.btc_atr_period.value)
+            btc["btc_atr_ema"] = ta.EMA(btc, timeperiod=self.btc_atr_ema_period.value)
+            btc["btc_atr_deviation"] = (btc["close"] - btc["btc_atr_ema"]) / btc["btc_atr"].where(btc["btc_atr"] > 0)
+            indicator_columns += ["btc_atr", "btc_atr_ema", "btc_atr_deviation"]
         merge_columns = ["date", *indicator_columns, "volume", "btc_buy_event", "btc_sell_event"]
         dataframe = merge_informative_pair(dataframe, btc[merge_columns],
                                            self.timeframe, tf, ffill=True)
@@ -111,9 +130,25 @@ class S09BtcTrendEth(IStrategy):
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         """BTC选定策略的买入条件在每根新BTC K线判断一次；ETH成交量>0是执行保护，不是方向信号。"""
         dataframe["enter_long"] = 0
-        dataframe.loc[dataframe["btc_entry_signal"] & (dataframe["volume"] > 0),
-                      ["enter_long", "enter_tag"]] = (1, "btc_macd_golden_cross" if self.btc_strategy.value == "macd" else "btc_sma_up")
+        entry = dataframe["btc_entry_signal"] & (dataframe["volume"] > 0)
+        tag = "btc_macd_golden_cross" if self.btc_strategy.value == "macd" else "btc_sma_up"
+        if self.btc_atr_enabled.value:
+            deviation = dataframe[f"btc_atr_deviation_{self.btc_timeframe.value}"]
+            entry = entry & deviation.notna()
+            dataframe.loc[entry & (deviation > self.btc_atr_threshold.value),
+                          ["enter_long", "enter_tag"]] = (1, tag + "_atr_reduced")
+            entry = entry & (deviation <= self.btc_atr_threshold.value)
+        dataframe.loc[entry, ["enter_long", "enter_tag"]] = (1, tag)
         return dataframe
+
+    def custom_stake_amount(self, pair, current_time, current_rate, proposed_stake,
+                            min_stake, max_stake, leverage, entry_tag, side, **kwargs):
+        """原生初始仓位回调：只按已生成的入场标签减仓，绝不按当前/未来价格重判信号。"""
+        if not self.btc_atr_enabled.value or not (entry_tag or "").endswith("_atr_reduced"):
+            return proposed_stake
+        stake = min(proposed_stake * float(self.btc_atr_stake_percent.value) / 100, max_stake)
+        # 返回0让Freqtrade跳过，防止原生最小金额钳制把试探仓位放大。
+        return 0 if min_stake is not None and stake < min_stake else stake
 
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         """BTC选定策略的退出条件卖ETH，不依赖ETH方向指标。"""

@@ -6,6 +6,47 @@ from test_freqtrade_strategies import isolated_strategy, frame
 
 
 class BtcTrendEthTests(unittest.TestCase):
+    def test_atr_tags_stake_bounds_and_unchanged_exits(self):
+        s=isolated_strategy('S09BtcTrendEth');s.btc_atr_enabled.value=True
+        d=frame([100]*5)
+        d['btc_entry_signal']=[True]*5;d['btc_exit_signal']=[False,True,False,True,False]
+        d['btc_atr_deviation_1d']=[1,2,2.01,-1,float('nan')]
+        result=s.populate_exit_trend(s.populate_entry_trend(d.copy(),{}),{})
+        self.assertEqual(result.enter_long.tolist(),[1,1,1,1,0])
+        self.assertEqual(result.exit_long.tolist(),[0,1,0,1,0])
+        self.assertEqual(result.enter_tag.iloc[1],'btc_macd_golden_cross')
+        self.assertEqual(result.enter_tag.iloc[2],'btc_macd_golden_cross_atr_reduced')
+        def stake(tag,minimum=5,maximum=1000):
+            return s.custom_stake_amount('ETH/USDT',None,2000,1000,minimum,maximum,1,tag,'long')
+        self.assertEqual(stake(result.enter_tag.iloc[2]),300)
+        self.assertEqual(stake(result.enter_tag.iloc[1]),1000)
+        self.assertEqual(stake(result.enter_tag.iloc[2],maximum=200),200)
+        self.assertEqual(stake(result.enter_tag.iloc[2],minimum=350),0)
+        s.btc_atr_enabled.value=False
+        self.assertEqual(stake(result.enter_tag.iloc[2]),1000)
+        self.assertEqual(s.populate_entry_trend(d.copy(),{}).enter_long.tolist(),[1]*5)
+
+    def test_atr_closed_candle_alignment_and_future_prefix(self):
+        import talib.abstract as ta
+        s=isolated_strategy('S09BtcTrendEth');s.btc_atr_enabled.value=True
+        s.btc_fast.value,s.btc_slow.value,s.btc_signal.value=2,3,2
+        s.btc_atr_period.value,s.btc_atr_ema_period.value=3,4
+        btc=frame([100+i%7 for i in range(40)])
+        eth=frame([2000]*100);eth['date']=pd.date_range('2020-01-10',periods=100,freq='h',tz='UTC')
+        s.dp=SimpleNamespace(get_pair_dataframe=lambda **kwargs:btc)
+        def analyze(d):
+            result=s.populate_indicators(d.copy(),{'pair':'ETH/USDT'})
+            return s.populate_exit_trend(s.populate_entry_trend(result,{}),{})
+        full=analyze(eth)
+        expected=(btc.close-ta.EMA(btc,timeperiod=4))/ta.ATR(btc,timeperiod=3)
+        self.assertAlmostEqual(full.btc_atr_deviation_1d.iloc[22],expected.iloc[8])
+        self.assertAlmostEqual(full.btc_atr_deviation_1d.iloc[23],expected.iloc[9])
+        for end in [23,24,60]:pd.testing.assert_frame_equal(full.iloc[:end],analyze(eth.iloc[:end]))
+        changed=btc.copy();changed.loc[changed.date>=pd.Timestamp('2020-01-10',tz='UTC'),'close']=10000
+        s.dp.get_pair_dataframe=lambda **kwargs:changed
+        pd.testing.assert_frame_equal(full.iloc[:23],analyze(eth).iloc[:23])
+        self.assertNotEqual(full.btc_atr_deviation_1d.iloc[23],analyze(eth).btc_atr_deviation_1d.iloc[23])
+
     def test_btc_signals_are_only_entry_and_exit_source(self):
         s=isolated_strategy('S09BtcTrendEth')
         d=frame([100]*6)

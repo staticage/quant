@@ -2,6 +2,22 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { defaults, validateConfig, runnerArguments } from '../lib/config.mjs';
 
+test('optional S09 ATR defaults off, restores history and validates all risk parameters',async()=>{
+  const {restoreBtcOptions}=await import('../lib/config.mjs');
+  assert.equal(restoreBtcOptions({}).btcAtrEnabled,false);
+  assert.equal(restoreBtcOptions({btc_atr_enabled:true,btc_atr_stake_percent:25}).btcAtrStakePercent,25);
+  const c=validateConfig({...defaults,strategies:['S09'],pairs:['ETH/USDT'],timeframe:'1h',
+    btcAtrEnabled:true,btcAtrPeriod:21,btcAtrEmaPeriod:50,btcAtrThreshold:3,btcAtrStakePercent:25});
+  const args=runnerArguments(c,'/work/user_data/ui-runs/test');
+  assert.ok(args.includes('--btc-atr-enabled'));
+  for(const [flag,value] of [['--btc-atr-period','21'],['--btc-atr-ema-period','50'],['--btc-atr-threshold','3'],['--btc-atr-stake-percent','25']])
+    assert.equal(args[args.indexOf(flag)+1],value);
+  assert.ok(!runnerArguments(validateConfig(defaults),'/work/user_data/ui-runs/test').includes('--btc-atr-enabled'));
+  for(const change of [{strategies:['S08']},{btcAtrEnabled:'true'},{btcAtrPeriod:1},{btcAtrEmaPeriod:401},
+    {btcAtrThreshold:0},{btcAtrThreshold:Infinity},{btcAtrStakePercent:0},{btcAtrStakePercent:101}])
+    assert.throws(()=>validateConfig({...c,...change}));
+});
+
 test('stoploss percent reaches native CLI and old records retain their original defaults',async()=>{
   const {restoreStoplossPercent}=await import('../lib/config.mjs');
   const c=validateConfig({...defaults,stoplossPercent:2.5}),a=runnerArguments(c,'/work/user_data/ui-runs/test');

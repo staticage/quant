@@ -27,7 +27,7 @@ export function macdFilterDescriptions(input) {
   if(c.macdVolume) labels.push(`成交量≥此前${c.macdVolumeWindow}根均量×${c.macdVolumeMultiplier}`);
   return labels;
 }
-export const btcDefaults={btcStrategy:'macd',btcMaFast:20,btcMaSlow:60,btcTimeframe:'1d',btcMode:'cross',btcFast:12,btcSlow:26,btcSignal:9,btcExit:true};
+export const btcDefaults={btcStrategy:'macd',btcMaFast:20,btcMaSlow:60,btcTimeframe:'1d',btcMode:'cross',btcFast:12,btcSlow:26,btcSignal:9,btcExit:true,btcAtrEnabled:false,btcAtrPeriod:14,btcAtrEmaPeriod:20,btcAtrThreshold:2,btcAtrStakePercent:30};
 // 旧记录没有公共止损参数，按当时策略默认恢复；不得把新设置套到旧结果上。
 export const defaultStoplossPercent = strategy => strategy==='S03'?5:10;
 export function restoreStoplossPercent(input,strategy=input.strategies?.[0]) {
@@ -96,6 +96,12 @@ export function validateConfig(input) {
   if(!['1h','4h','1d'].includes(btc.btcTimeframe)||!['cross','dif_dea','zero','both'].includes(btc.btcMode)||typeof btc.btcExit!=='boolean') fail('BTC趋势参数无效');
   Object.assign(config,{btcTimeframe:btc.btcTimeframe,btcMode:btc.btcMode,btcExit:btc.btcExit});
   for(const [key,low,high] of [['btcFast',2,399],['btcSlow',3,400],['btcSignal',2,100]]) config[key]=numeric(btc,key,low,high,true);
+  if(typeof btc.btcAtrEnabled!=='boolean') fail('ATR开关必须为布尔值');
+  config.btcAtrEnabled=btc.btcAtrEnabled;
+  for(const [key,low,high] of [['btcAtrPeriod',2,100],['btcAtrEmaPeriod',2,400]]) config[key]=numeric(btc,key,low,high,true);
+  config.btcAtrThreshold=numeric(btc,'btcAtrThreshold',0.1,20);
+  config.btcAtrStakePercent=numeric(btc,'btcAtrStakePercent',1,100);
+  if(config.btcAtrEnabled&&!config.strategies.includes('S09')) fail('BTC ATR偏离控制仅适用于S09');
   if(config.btcFast>=config.btcSlow) fail('BTC快线必须小于慢线');
   if(config.strategies.includes('S09')) {
     if(config.btcMode!=='cross'||config.btcExit!==true) fail('S09由所选BTC策略独立提供买卖信号，请刷新表单使用当前规则');
@@ -120,9 +126,10 @@ export function runnerArguments(config, outputDir) {
   for(const key of Object.keys(macdOptionDefaults).filter(key=>!['macdMtf','macdRsi','macdMa','macdVolume'].includes(key)))
     result.push('--'+key.replace(/[A-Z]/g,c=>'-'+c.toLowerCase()),String(config[key]??macdOptionDefaults[key]));
   if(config.strategies.includes('S09')) {
-    for(const key of ['btcStrategy','btcMaFast','btcMaSlow','btcTimeframe','btcMode','btcFast','btcSlow','btcSignal']) result.push('--'+key.replace(/[A-Z]/g,c=>'-'+c.toLowerCase()),String(config[key]));
+    for(const key of ['btcStrategy','btcMaFast','btcMaSlow','btcTimeframe','btcMode','btcFast','btcSlow','btcSignal','btcAtrPeriod','btcAtrEmaPeriod','btcAtrThreshold','btcAtrStakePercent']) result.push('--'+key.replace(/[A-Z]/g,c=>'-'+c.toLowerCase()),String(config[key]));
 
   }
+  if(config.btcAtrEnabled) result.push('--btc-atr-enabled');
   if(config.timeframeDetail) result.push('--timeframe-detail',config.timeframeDetail);
   return result;
 }
