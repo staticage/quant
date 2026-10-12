@@ -34,7 +34,7 @@ export async function listJobs() {
   }
   const baseline=await json(path.join(root,'reports','summary.json'));
   if(baseline?.run?.status==='completed')jobs.push({id:'baseline',status:'completed',
-    createdAt:baseline.run.created_at,config:{...baseline.run.arguments,skipDownload:baseline.run.arguments.skip_download},label:'首次一年回测'});
+    createdAt:baseline.run.created_at,config:{...baseline.run.arguments},label:'首次一年回测'});
   return jobs.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
 }
 export async function getJob(id) {

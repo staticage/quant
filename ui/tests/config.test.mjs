@@ -7,7 +7,8 @@ test('valid request yields fixed argv with selected strategies and native window
   const args=runnerArguments(config,'/work/user_data/ui-runs/test');
   assert.equal(args[args.indexOf('--fast')+1],'10');
   assert.equal(args[args.indexOf('--slow')+1],'80');
-  assert.ok(args.includes('--skip-download'));
+  assert.ok(!args.includes('--skip-download'));
+  assert.ok(!('skipDownload' in config));
   assert.deepEqual(args.slice(args.indexOf('--strategies')+1,args.indexOf('--exchange')),['S01','S02']);
 });
 test('reject unknown strategies and shell/path injection inputs',()=>{

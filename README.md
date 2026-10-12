@@ -16,7 +16,9 @@
 | reports/ | 参数页面模板、实际参数和统计摘要 | 管理（日志除外） |
 | pyproject.toml、uv.lock | 框架版本和依赖锁定 | 管理 |
 | user_data/strategies/ | 运行时拷贝和原生参数JSON | 忽略 |
-| user_data/data/、user_data/backtest_results/ | 行情、Freqtrade原始结果 | 忽略 |
+| user_data/postgres/ | PostgreSQL 私有集群，只保存5m OHLCV | 忽略 |
+| user_data/market_data/、user_data/backtest_results/ | 临时聚合行情、Freqtrade原始结果 | 忽略 |
+| user_data/data/ | 旧5m行情导入来源（保留原文件） | 忽略 |
 | user_data/ui-runs/ | UI独立任务、运行副本、日志、回测结果 | 忽略 |
 | .venv/、.cache/ | 依赖与缓存 | 忽略 |
 
@@ -53,8 +55,8 @@ npm --prefix ui run start
 
 UI后端调用 `uv run --no-sync python scripts/run_backtest.py`，再由脚本调用
 Freqtrade。实际回测仍由Freqtrade执行，不存在第二套回测引擎。
-源码在repo，每个任务复制选定策略到独立运行目录；共用下载行情，同一时刻
-仅允许一个任务，避免行情下载冲突。任务文件位于user_data/ui-runs/，不入Git。
+源码在repo，每个任务复制选定策略到独立运行目录；共用 PostgreSQL 5m 行情仓库，
+仅允许一个UI任务；数据库按交易对加锁避免CLI重复下载。任务文件不入Git。
 页面仅监听本机127.0.0.1；需要先完成uv同步，并确保启动服务器时PATH中有uv。
 本地开发可用 `npm --prefix ui run dev`，源码及package-lock.json纳入根目录Git。
 
@@ -87,7 +89,7 @@ uv run python scripts/run_backtest.py \
 下载失败或没有新Freqtrade结果时明确记录failed，不展示虚构结果。
 
 首次使用无需密钥。模板dry_run=true，通知和API关闭，脚本只调用
- download-data/backtesting，不启动实盘。--skip-download复用已有行情。
+ download-data/backtesting，不启动实盘。行情自动查库复用、仅补下载缺口。
 
 ## 更新Freqtrade
 
@@ -131,8 +133,8 @@ UV_CACHE_DIR=/Users/alex/quant/.cache/uv uv run python scripts/run_backtest.py \
 ```
 
 UI每次回测独立保存在user_data/ui-runs，不覆盖S01/S02基线记录。
-下载先补历史预热，再追加近期行情；预热或区间行情不完整时明确失败。
-使用复用行情时也检查数据完整性，修改参数后可能需要更长预热，应重新下载。
+自动检查区间与预热覆盖，仅补下载缺失5m行情；不完整时明确失败。
+修改区间、周期或参数后自动重新检查覆盖，无需手动选择是否复用。
 本次MACD结果快照见[报告](reports/macd/回测结果.md)及[验证](reports/MACD验证记录.md)。
 
 ## Ant Design 回测工作台
@@ -246,3 +248,47 @@ UV_CACHE_DIR=/Users/alex/quant/.cache/uv uv run python scripts/run_backtest.py \
 ```
 
 双SMA模式本次只完成代码与原生加载检查，没有运行真实收益回测；此前S09报告均为MACD模式。
+
+## PostgreSQL 5m 行情仓库
+
+页面已移除“复用已下载行情”选项。数据库仅保存现货5m OHLCV，主键为交易所、
+交易对和UTC开盘时间；同一BTC/ETH数据可供不同策略、区间和周期复用。
+运行时先导入已有 `user_data/data/<exchange>/*-5m.feather`（内容未变则跳过），
+逐根检测区间内缺口，包括策略预热；只用 Freqtrade `download-data --timeframes 5m`
+补下载缺口，继续沿用7890代理。下载失败或仍有缺口就停止，不静默填补。
+
+PostgreSQL 14及以上支持本项目使用的 `date_bin`。默认使用本项目的私有本地
+PostgreSQL 17集群，不需要TimescaleDB扩展；通过SQL生成1h/4h/1d的首开、最高、
+最低、末收与成交量和。UTC对齐、只导出完整桶，当前未收盘5m不入库。
+派生Feather只是单次任务的Freqtrade输入，不作为永久行情库；收益与撮合仍由
+Freqtrade原生引擎完成，回测记录含查库/补下载范围及最终输入文件SHA256。
+
+macOS首次安装和启动：
+
+```sh
+brew install postgresql@17
+uv sync --locked
+uv run python scripts/postgres_service.py start
+uv run python scripts/postgres_service.py status
+# 无回测运行时可停止，下次任务自动启动
+uv run python scripts/postgres_service.py stop
+```
+
+默认集群在 `user_data/postgres/`，socket在 `.cache/postgres-socket/`（权限700），
+只接受私有Unix socket，不监听TCP，不修改系统服务。首次任务可自动初始化/启动。
+其他安装路径用 `QUANT_PG_BIN` 指定含initdb/pg_ctl的目录。
+已有数据库可设置 `QUANT_DATABASE_URL` 后启动UI，例如
+`postgresql://quant:密码@127.0.0.1:5432/quant`；此时不创建或启动本地集群。
+目标库需预先创建、PostgreSQL>=14，并授权创建表/索引及读写权限。连接串不要提交Git，
+也不会写入回测审计。停用外部数据库时请自行管理其服务。
+
+只准备用户指定策略所需行情，不运行性能回测：
+
+```sh
+uv run python scripts/run_backtest.py --strategies S08 --timeframe 1d \
+  --timeframe-detail 5m --start 2026-01-01 --end 2026-10-12 --prepare-data-only
+QUANT_TEST_POSTGRES=1 uv run python -m unittest discover -s tests -p test_market_store.py -v
+```
+
+首次缺少历史5m时下载量会大于直接下载日线，但后续只补缺失区间。
+旧高周期文件不能反推5m，因此不会用旧日线伪造更细粒度行情。

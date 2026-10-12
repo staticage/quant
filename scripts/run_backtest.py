@@ -7,12 +7,13 @@ S01/S02/S08窗口用Freqtrade原生参数文件加载，策略源码始终留在
 import argparse
 import hashlib
 import json
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 import shutil
 import subprocess
 import pandas as pd
 from freqtrade import __version__
+from market_store import prepare_market_data
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -72,7 +73,7 @@ def main():
     parser.add_argument("--btc-signal", type=int, default=9)
     parser.add_argument("--btc-exit", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--prepare-only", action="store_true", help="只复制策略、生成配置，不联网回测")
-    parser.add_argument("--skip-download", action="store_true", help="复用已下载行情")
+    parser.add_argument("--prepare-data-only", action="store_true", help="只补齐数据库行情并导出，不运行回测")
     parser.add_argument("--output-dir", help="UI任务独立输出目录（项目user_data/ui-runs内）")
     args = parser.parse_args()
     output_dir = ROOT / "reports"
@@ -200,40 +201,40 @@ def main():
         print(f"已复制策略并生成配置：{path}")
         return
     base = ["uv", "run", "--no-sync", "freqtrade"]
+    # 数据库为唯一行情仓库；高周期文件只是本次任务的原生 Freqtrade 输入。
+    data_dir = runtime_dir / "market_data" / args.exchange
     common = ["--config", str(path), "--userdir", str(runtime_dir),
-              "--datadir", str(ROOT / "user_data/data" / args.exchange)]
+              "--datadir", str(data_dir)]
     results_dir = runtime_dir / "backtest_results"
     before = set(results_dir.glob("*.zip"))
     try:
-        if not args.skip_download:
-            for (pair, tf), count in data_plan.items():
-                download_start = datetime.combine(start, datetime.min.time()) - timedelta(
-                    minutes=(count + 10 if count else 0) * minutes_by_tf[tf])
-                # Freqtrade默认只追加；先补历史再追加近期数据，不能因预热不足推迟起点。
-                for prepend in (True, False):
-                    subprocess.run(base + ["download-data"] + common + ["--pairs", pair, "--timeframes", tf,
-                                   "--timerange", f"{download_start:%Y%m%d}-{end:%Y%m%d}"] +
-                                   (["--prepend"] if prepend else []), cwd=ROOT, check=True)
+        record["market_store"] = prepare_market_data(args.exchange, data_plan, start, end,
+                                                    path, runtime_dir, data_dir)
         # 行情完整性审计，不计算收益或撮合。缺失行情/预热应失败，不能悄悄缩短区间。
         coverage = {}
         for (pair, tf), count in data_plan.items():
-            data_path = ROOT / "user_data/data" / args.exchange / f"{pair.replace('/', '_')}-{tf}.feather"
+            data_path = data_dir / f"{pair.replace('/', '_')}-{tf}.feather"
             candles = pd.read_feather(data_path)
             times = pd.DatetimeIndex(pd.to_datetime(candles["date"], utc=True))
             delta = pd.Timedelta(minutes=minutes_by_tf[tf])
             first = pd.Timestamp(start, tz="UTC") - count * delta
             expected = pd.date_range(first, pd.Timestamp(end, tz="UTC"), freq=delta, inclusive="left")
             if times.has_duplicates or len(expected.difference(times)):
-                raise ValueError(f"{pair} {tf}缺少行情/预热或有重复K线，请关闭复用行情后重新下载")
+                raise ValueError(f"{pair} {tf}缺少行情/预热或有重复K线，请检查数据库行情补齐日志")
             coverage[f"{pair} {tf}"] = {"required_start": first.isoformat(), "end_exclusive": args.end,
                                          "verified_candles": len(expected), "missing": 0}
         record["data_coverage"] = coverage
         write_json(record_path, record)
+        if args.prepare_data_only:
+            record["status"] = "data_prepared"
+            write_json(record_path, record)
+            print("PostgreSQL 行情已补齐，原生 Freqtrade 输入已导出；未运行回测")
+            return
         subprocess.run(base + ["backtesting"] + common + ["--strategy-list"] +
                        [NAMES[s] for s in args.strategies] + ["--timerange", f"{start:%Y%m%d}-{end:%Y%m%d}",
                        "--export", "trades", "--cache", "none", "--breakdown", "month"] +
                        (["--timeframe-detail", args.timeframe_detail] if args.timeframe_detail else []), cwd=ROOT, check=True)
-    except (subprocess.CalledProcessError, ValueError, OSError) as error:
+    except (subprocess.CalledProcessError, ValueError, OSError, RuntimeError) as error:
         record.update(status="failed", error=str(error), exit_code=getattr(error, "returncode", None))
         write_json(record_path, record)
         raise
@@ -243,7 +244,6 @@ def main():
         write_json(record_path, record)
         raise RuntimeError(record["error"])
     record.update(status="completed", result_file=str(max(fresh, key=lambda p: p.stat().st_mtime).relative_to(ROOT)))
-    data_dir = ROOT / "user_data/data" / args.exchange
     record["data_sha256"] = {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
                               for pair, tf in data_plan
                               for p in [data_dir / f"{pair.replace('/', '_')}-{tf}.feather"]}

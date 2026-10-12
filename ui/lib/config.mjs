@@ -31,7 +31,7 @@ export const btcDefaults={btcStrategy:'macd',btcMaFast:20,btcMaSlow:60,btcTimefr
 export function restoreBtcOptions(input) {return Object.fromEntries(Object.entries(btcDefaults).map(([key,value])=>{const snake=key.replace(/[A-Z]/g,c=>'_'+c.toLowerCase());return [key,input[key]!==undefined?input[key]:input[snake]!==undefined?input[snake]:value]}));}
 export const defaults = { strategies:['S08'], exchange:'binance', pairs:['BTC/USDT'],
   timeframe:'1d', timeframeDetail:'5m', start:'2026-01-01', end:'2026-10-12', fee:0.001, wallet:10000,
-  stake:1000, fast:20, slow:60, entry:20, exit:10, macdFast:12, macdSlow:26, macdSignal:9, ...macdOptionDefaults, ...btcDefaults, skipDownload:false };
+  stake:1000, fast:20, slow:60, entry:20, exit:10, macdFast:12, macdSlow:26, macdSignal:9, ...macdOptionDefaults, ...btcDefaults };
 
 function fail(message) { throw new Error(message); }
 function numeric(input, name, low, high, integer=false) {
@@ -59,7 +59,7 @@ export function validateConfig(input) {
     fee:numeric(input,'fee',0,0.099), wallet:numeric(input,'wallet',1,1e12),
     stake:numeric(input,'stake',1,1e12), fast:numeric(input,'fast',2,399,true),
     slow:numeric(input,'slow',3,400,true),entry:numeric(input,'entry',2,400,true),
-    exit:numeric(input,'exit',1,400,true),skipDownload:input.skipDownload===true,
+    exit:numeric(input,'exit',1,400,true),
     timeframeDetail:input.timeframeDetail ?? '',
     macdFast:numeric({...input,macdFast:input.macdFast??12},'macdFast',2,399,true),
     macdSlow:numeric({...input,macdSlow:input.macdSlow??26},'macdSlow',3,400,true),
@@ -117,6 +117,5 @@ export function runnerArguments(config, outputDir) {
 
   }
   if(config.timeframeDetail) result.push('--timeframe-detail',config.timeframeDetail);
-  if(config.skipDownload) result.push('--skip-download');
   return result;
 }

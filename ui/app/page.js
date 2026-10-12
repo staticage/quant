@@ -59,6 +59,7 @@ function Results({detail,loading,error}) {
     <div className="context-tags"><Tag>{c.strategies.includes('S09')?'ETH执行':'信号'} {c.timeframe}</Tag><Tag>成交 {c.timeframeDetail||c.timeframe_detail||c.timeframe}</Tag>{c.strategies.includes('S08')&&<Tag>MACD {c.macdFast??c.macd_fast??12} / {c.macdSlow??c.macd_slow??26} / {c.macdSignal??c.macd_signal??9}</Tag>}<Tag>手续费 {percent(c.fee)}</Tag></div>
     {c.strategies.includes('S08')&&<div className="filter-tags">{macdFilterDescriptions(c).length?macdFilterDescriptions(c).map(label=><Tag key={label}>{label}</Tag>):<span>增强选项全部关闭 · 基础MACD</span>}</div>}
     {c.strategies.includes('S09')&&<div className="filter-tags"><Tag>BTC/USDT {restoreBtcOptions(c).btcTimeframe} · {restoreBtcOptions(c).btcStrategy==='sma'?`SMA ${restoreBtcOptions(c).btcMaFast}/${restoreBtcOptions(c).btcMaSlow}`:`MACD ${restoreBtcOptions(c).btcFast}/${restoreBtcOptions(c).btcSlow}/${restoreBtcOptions(c).btcSignal}`}</Tag>{restoreBtcOptions(c).btcMode==='cross'?<Tag>{restoreBtcOptions(c).btcStrategy==='sma'?'BTC短均线>长均线买ETH · ≤退出':'BTC金叉买ETH · BTC死叉卖ETH'}</Tag>:<><Tag>旧规则：BTC过滤＋ETH MACD</Tag><Tag>ETH MACD {c.macdFast??c.macd_fast??12}/{c.macdSlow??c.macd_slow??26}/{c.macdSignal??c.macd_signal??9}</Tag><Tag>BTC转弱退出：{restoreBtcOptions(c).btcExit?'开启':'关闭'}</Tag></>}</div>}
+    {result?.run?.market_store&&<div className="filter-tags"><Tag icon={<DatabaseOutlined/>}>PostgreSQL · 5m 行情</Tag>{Object.entries(result.run.market_store.pairs).map(([pair,data])=><Tag key={pair} color={data.cache_hit?'success':'processing'}>{pair} · {data.cache_hit?'全部复用':`补下载 ${data.downloaded_ranges.length} 段`}</Tag>)}</div>}
     {busy(job)?<div className="running-state"><Spin/><div><strong>正在执行回测</strong><p>准备行情、计算信号并模拟成交，完成后自动显示结果。</p></div></div>:job.status==='failed'?<Alert type="error" showIcon title="本次回测未完成" description={job.error||'请展开运行日志查看原因。'}/>:stats?<>
       {single&&<div className="metrics"><Metric label="总资金收益率" value={percent(single.profit_total)} positive={single.profit_total>=0}/><Metric label="收益 · USDT" value={money(single.profit_total_abs)} positive={single.profit_total_abs>=0}/><Metric label="最大回撤" value={percent(single.max_drawdown_account)}/><Metric label="交易次数 / 胜率" value={`${single.total_trades} / ${percent(single.winrate)}`}/></div>}
       {!single&&<Table size="small" pagination={false} scroll={{x:700}} rowKey="name" dataSource={entries.map(([name,s])=>({...s,name}))} columns={[{title:'策略',dataIndex:'name',render:name=>names[name.slice(0,3)]||name},{title:'交易数',dataIndex:'total_trades',align:'right'},{title:'总资金收益率',dataIndex:'profit_total',align:'right',render:percent},{title:'收益 USDT',dataIndex:'profit_total_abs',align:'right',render:money},{title:'最大回撤',dataIndex:'max_drawdown_account',align:'right',render:percent},{title:'胜率',dataIndex:'winrate',align:'right',render:percent}]}/>}
@@ -130,7 +131,7 @@ export default function Dashboard() {
     }catch(e){setError(e.message)}finally{setSubmitting(false)}
   }
   function reuse(c) {
-    const next={...defaults,...c,...restoreMacdOptions(c),...restoreBtcOptions(c),strategies:[c.strategies[0]],timeframeDetail:c.timeframeDetail??c.timeframe_detail??'',macdFast:c.macdFast??c.macd_fast??12,macdSlow:c.macdSlow??c.macd_slow??26,macdSignal:c.macdSignal??c.macd_signal??9,skipDownload:c.skipDownload??c.skip_download??false};
+    const next={...defaults,...c,...restoreMacdOptions(c),...restoreBtcOptions(c),strategies:[c.strategies[0]],timeframeDetail:c.timeframeDetail??c.timeframe_detail??'',macdFast:c.macdFast??c.macd_fast??12,macdSlow:c.macdSlow??c.macd_slow??26,macdSignal:c.macdSignal??c.macd_signal??9};
     if(next.strategies[0]==='S09'){next.btcMode='cross';next.btcExit=true;}
     setConfig(next);setPairText(next.pairs.join(' '));setFeeText(next.fee*100);
     if(!active){setRunId(null);sessionStorage.removeItem('quant-current-run')}
@@ -186,7 +187,7 @@ export default function Dashboard() {
                 </Enhancement>
               </div>}
               <Collapse ghost className="advanced-settings" items={[{key:'funds',label:'资金与费用',children:<div className="form-grid">{number('wallet','初始资金 · USDT',1,1e12)}{number('stake','单笔投入 · USDT',1,1e12)}<Field label="单边手续费 · %" id="fee"><InputNumber id="fee" min={0} max={9.9} step={0.01} value={feeText} onChange={setFeeText} controls={false}/></Field></div>} ]}/>
-              <div className="form-actions"><Checkbox checked={config.skipDownload} onChange={e=>set('skipDownload',e.target.checked)}>复用已下载行情</Checkbox><span>首次运行或调整区间时建议关闭</span></div>
+              <div className="form-actions"><span>行情自动复用 · PostgreSQL 保存 5 分钟数据，仅补下载缺失区间；小时线与日线由数据库聚合。</span></div>
               {error&&<Alert className="form-error" type="error" showIcon title={error}/>}
               <Button type="primary" htmlType="submit" block size="large" icon={<PlayCircleOutlined/>} loading={submitting} disabled={!ready||!!active}>{active?'回测运行中':'运行回测'}</Button>
             </Form></Card>

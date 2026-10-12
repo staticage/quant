@@ -11,3 +11,7 @@ user_data/ui-runs/
 ui/node_modules/
 ui/.next/
 ui/next-env.d.ts
+user_data/postgres/
+user_data/market_data/
+.env
+.env.*
