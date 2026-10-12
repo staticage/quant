@@ -3,7 +3,7 @@
 逻辑：20根简单均线高于60根均线时允许入场，反之（含相等）退出。
 默认1d，20/60是K线数，不是股票交易日。适合持续上行，横盘易反复亏损。
 资金大小由Freqtrade配置的stake_amount/max_open_trades决定，不是满仓承诺。
-不设ROI止盈；框架固定止损-10%，这是额外风控，并非原始均线指标规则。
+不设ROI止盈；框架默认固定止损-10%，这是额外风控，并非原始均线指标规则。
 跳空/滑点可使实际损失超过止损；配置可能覆盖类内参数，运行前须核查。
 来源：https://www.fidelity.com/webcontent/ap130058-research-experience-content/23.01/chartGuide/indicators.pdf
 指标是基础均线，自定义进出场和止损；未经真实行情验证，不保证盈利。
@@ -22,7 +22,7 @@ class S01SmaTrend(IStrategy):
     process_only_new_candles = True
     startup_candle_count = 60
     minimal_roi = {}  # 禁用独立ROI退出，保留策略退出及固定止损。
-    stoploss = -0.10
+    stoploss = -0.10  # 默认固定止损10%，回测配置stoploss可覆盖；执行由Freqtrade负责。
     trailing_stop = False
     use_exit_signal = True
     exit_profit_only = False  # 允许亏损时按趋势退出。

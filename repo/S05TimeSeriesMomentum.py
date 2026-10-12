@@ -5,7 +5,7 @@
 M=close[t]/close[t-365]-1；M>0允许做多，M<=0退出；没有相对排名。
 来源：https://www.aqr.com/Insights/Research/Journal-Article/Time-Series-Momentum
 本实现是价格收益、只做多、月末决策，未复现原论文的多空期货/波动配置。
-另加固定-10%止损，止损后若月内方向仍正，可在后续信号重新入场。
+另加默认固定-10%止损，止损后若月内方向仍正，可在后续信号重新入场。
 风险：反转响应慢，月内重入可重复止损，滑点及成本；仓位由配置管理。
 """
 
@@ -22,7 +22,7 @@ class S05TimeSeriesMomentum(IStrategy):
     process_only_new_candles = True
     startup_candle_count = 400  # 365根历史及等待首次有效月末的余量。
     minimal_roi = {}
-    stoploss = -0.10
+    stoploss = -0.10  # 默认固定止损10%，回测配置stoploss可覆盖；执行由Freqtrade负责。
     trailing_stop = False
     use_exit_signal = True
     exit_profit_only = False

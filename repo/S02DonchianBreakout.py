@@ -4,7 +4,7 @@
 通道必须shift(1)排除当根，否则high>=close会让突破条件无法正常成立。
 来源：https://www.fidelity.com/webcontent/ap130058-research-experience-content/23.01/chartGuide/indicators.pdf
 20/10交易规则为研究模板，不是包含ATR头寸和加仓的完整海龟系统。
-另设框架固定-10%止损、禁用ROI止盈；仓位由Freqtrade配置决定。
+另设框架默认固定-10%止损、禁用ROI止盈；仓位由Freqtrade配置决定。
 风险：假突破、跳空和手续费；止损不保证损失封顶，未经收益验证。
 """
 
@@ -21,7 +21,7 @@ class S02DonchianBreakout(IStrategy):
     process_only_new_candles = True
     startup_candle_count = 21
     minimal_roi = {}
-    stoploss = -0.10  # 本库额外风控，配置覆盖时需记录。
+    stoploss = -0.10  # 默认固定止损10%，回测配置可覆盖，实际值须记录。
     trailing_stop = False
     use_exit_signal = True
     exit_profit_only = False

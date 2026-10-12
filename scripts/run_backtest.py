@@ -40,6 +40,7 @@ def main():
     parser.add_argument("--fee", type=float, default=0.001, help="单边比例，0.001=0.1%%")
     parser.add_argument("--wallet", type=float, default=10000)
     parser.add_argument("--stake", type=float, default=1000)
+    parser.add_argument("--stoploss-percent", type=float, help="固定止损百分比，0.01至99.99，例如5表示5%%；省略沿用策略默认")
     parser.add_argument("--fast", type=int, default=20)
     parser.add_argument("--slow", type=int, default=60)
     parser.add_argument("--entry", type=int, default=20)
@@ -85,6 +86,8 @@ def main():
         runtime_dir = output_dir / "user_data"
     output_dir.mkdir(parents=True, exist_ok=True)
     start, end = date.fromisoformat(args.start), date.fromisoformat(args.end)
+    if args.stoploss_percent is not None and not 0.01 <= args.stoploss_percent <= 99.99:
+        parser.error("止损百分比需为0.01至99.99之间的有限数值")
     if start >= end or not 0 <= args.fee < 0.1 or not 0 < args.stake <= args.wallet * 0.99:
         parser.error("检查日期、费用和资金：起点<终点，0<=fee<0.1，stake<=wallet*0.99")
     if not 2 <= args.fast < args.slow <= 400 or not 1 <= args.exit <= args.entry <= 400 or args.entry < 2:
@@ -129,6 +132,10 @@ def main():
     config = json.loads((ROOT / "config/backtest.json").read_text())
     config.update(timeframe=args.timeframe, fee=args.fee, dry_run_wallet=args.wallet,
                   stake_amount=args.stake)
+    if args.stoploss_percent is not None:
+        # 页面输入正百分比，Freqtrade原生配置使用负比例；由StrategyResolver覆盖类默认。
+        # 不另建止损撮合逻辑；成交、手续费与跳空仍按Freqtrade语义处理。
+        config["stoploss"] = -args.stoploss_percent / 100
     config["exchange"].update(name=args.exchange, pair_whitelist=args.pairs)
     if args.exchange != "binance":
         # Binance只读域名和市场加载选项不能套用到其他交易所。

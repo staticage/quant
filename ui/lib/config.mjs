@@ -28,10 +28,15 @@ export function macdFilterDescriptions(input) {
   return labels;
 }
 export const btcDefaults={btcStrategy:'macd',btcMaFast:20,btcMaSlow:60,btcTimeframe:'1d',btcMode:'cross',btcFast:12,btcSlow:26,btcSignal:9,btcExit:true};
+// 旧记录没有公共止损参数，按当时策略默认恢复；不得把新设置套到旧结果上。
+export const defaultStoplossPercent = strategy => strategy==='S03'?5:10;
+export function restoreStoplossPercent(input,strategy=input.strategies?.[0]) {
+  return input.stoplossPercent ?? input.stoploss_percent ?? defaultStoplossPercent(strategy);
+}
 export function restoreBtcOptions(input) {return Object.fromEntries(Object.entries(btcDefaults).map(([key,value])=>{const snake=key.replace(/[A-Z]/g,c=>'_'+c.toLowerCase());return [key,input[key]!==undefined?input[key]:input[snake]!==undefined?input[snake]:value]}));}
 export const defaults = { strategies:['S08'], exchange:'binance', pairs:['BTC/USDT'],
   timeframe:'1d', timeframeDetail:'5m', start:'2026-01-01', end:'2026-10-12', fee:0.001, wallet:10000,
-  stake:1000, fast:20, slow:60, entry:20, exit:10, macdFast:12, macdSlow:26, macdSignal:9, ...macdOptionDefaults, ...btcDefaults };
+  stake:1000, stoplossPercent:10, fast:20, slow:60, entry:20, exit:10, macdFast:12, macdSlow:26, macdSignal:9, ...macdOptionDefaults, ...btcDefaults };
 
 function fail(message) { throw new Error(message); }
 function numeric(input, name, low, high, integer=false) {
@@ -60,6 +65,7 @@ export function validateConfig(input) {
     stake:numeric(input,'stake',1,1e12), fast:numeric(input,'fast',2,399,true),
     slow:numeric(input,'slow',3,400,true),entry:numeric(input,'entry',2,400,true),
     exit:numeric(input,'exit',1,400,true),
+    stoplossPercent:numeric({...input,stoplossPercent:input.stoplossPercent===undefined?defaultStoplossPercent(input.strategies[0]):input.stoplossPercent},'stoplossPercent',0.01,99.99),
     timeframeDetail:input.timeframeDetail ?? '',
     macdFast:numeric({...input,macdFast:input.macdFast??12},'macdFast',2,399,true),
     macdSlow:numeric({...input,macdSlow:input.macdSlow??26},'macdSlow',3,400,true),
@@ -107,6 +113,7 @@ export function runnerArguments(config, outputDir) {
     '--exchange',config.exchange,'--pairs',...config.pairs,'--timeframe',config.timeframe,
     '--start',config.start,'--end',config.end,'--output-dir',outputDir];
   for(const name of ['fee','wallet','stake','fast','slow','entry','exit']) result.push(`--${name}`,String(config[name]));
+  result.push('--stoploss-percent',String(config.stoplossPercent));
   for(const [flag,key] of [['macd-fast','macdFast'],['macd-slow','macdSlow'],['macd-signal','macdSignal']]) result.push(`--${flag}`,String(config[key]));
   for(const key of ['macdMtf','macdRsi','macdMa','macdVolume'])
     if(config[key]) result.push('--'+key.replace(/[A-Z]/g,c=>'-'+c.toLowerCase()));

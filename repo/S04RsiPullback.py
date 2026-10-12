@@ -1,7 +1,7 @@
 """S04 RSI(2)超卖＋SMA200趋势过滤，Freqtrade现货做多。
 
 入场：RSI<10且close>SMA200；退出：RSI>=50或close<=SMA200，
-开仓满10个周期也退出；另加框架固定-10%止损，禁用ROI止盈。
+开仓满10个周期也退出；另加框架默认固定-10%止损，禁用ROI止盈。
 来源：https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/RSI
 这里使用Wilder平滑，但2/10/50和趋势过滤为自定义，非传统14/30/70参数。
 风险：趋势反转、持续超卖、交易成本；仓位由配置管理，未验证收益。
@@ -23,7 +23,7 @@ class S04RsiPullback(IStrategy):
     process_only_new_candles = True
     startup_candle_count = 400
     minimal_roi = {}
-    stoploss = -0.10
+    stoploss = -0.10  # 默认固定止损10%，回测配置stoploss可覆盖；执行由Freqtrade负责。
     trailing_stop = False
     use_exit_signal = True
     exit_profit_only = False

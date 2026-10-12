@@ -16,7 +16,7 @@ EMA及RSI由TA-Lib计算，保留其初始化语义；MACD预热5*(slow+signal)�
 4. 成交量：当前已结束K线volume >= 此前N根平均volume * 倍数（默认20/1.2）。
    历史均量先rolling再shift(1)，不把当根放大成交量混入基准，基准须>0。
 所有开启的过滤器与本根金叉同时满足才买入；错过被过滤金叉后等下一次金叉。
-过滤器只限制入场，不拦截死叉退出；固定10%止损为额外研究风控，不设ROI。
+过滤器只限制入场，不拦截死叉退出；默认10%固定止损为额外研究风控，不设ROI。
 仓位由框架配置决定；不做空、不加仓、不实现未定义的背离或支撑位判断。
 5分钟成交细化不是短周期信号，它仅用于Freqtrade盘中撮合及止损评估。
 适用趋势市场，横盘可能反复亏损；增加过滤可能错过机会，不能保证提高胜率。
@@ -39,7 +39,7 @@ class S08MacdCross(IStrategy):
     process_only_new_candles = True
     startup_candle_count = 175
     minimal_roi = {}  # 退出使用死叉与框架固定止损，不加独立ROI止盈。
-    stoploss = -0.10
+    stoploss = -0.10  # 默认固定止损10%，回测配置stoploss可覆盖；执行由Freqtrade负责。
     trailing_stop = False
     use_exit_signal = True
     exit_profit_only = False

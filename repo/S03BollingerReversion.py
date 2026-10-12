@@ -1,7 +1,7 @@
 """S03 布林带反弹，Freqtrade现货做多，默认20根/2倍总体标准差。
 
 close跌破下轨时入场；close回到中轨退出；开仓20个日线周期后时间退出。
-固定stoploss=-0.05由Freqtrade基于实际开仓管理，不再用信号收盘作参考价。
+固定stoploss默认-0.05、可由运行配置覆盖，由Freqtrade基于实际开仓管理，不再用信号收盘作参考价。
 止损执行与日线高低价撮合遵循Freqtrade；滑点可能导致损失超过5%。
 禁用ROI和移动止损；仓位配置不在策略里。下轨跌破可能预示持续下跌，
 并不保证反弹。参考：https://www.bollingerbands.com/bollinger-bands
@@ -23,7 +23,7 @@ class S03BollingerReversion(IStrategy):
     process_only_new_candles = True
     startup_candle_count = 20
     minimal_roi = {}
-    stoploss = -0.05
+    stoploss = -0.05  # 默认固定止损5%，回测配置stoploss可覆盖；执行由Freqtrade负责。
     trailing_stop = False
     use_exit_signal = True
     exit_profit_only = False

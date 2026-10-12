@@ -14,7 +14,7 @@ BTC周期可选1h/4h/1d，ETH执行周期不得长于BTC信号周期；默认1h�
 一个BTC事件只在其首次可见的ETH执行K线上触发一次，不能在填充后的小时线重复买入。
 ETH仅提供成交价格及有成交量保护，不需要ETH金叉，也不以ETH死叉卖出。
 仅使用已结束BTC K线；信号之后由Freqtrade处理ETH成交，不按BTC价格撮合ETH。
-固定10%ETH止损是额外风控，仍可在BTC死叉前止损；不设ROI与移动止盈。
+默认10%ETH固定止损是额外风控，仍可在BTC死叉前止损；不设ROI与移动止盈。
 MACD止损后等待新金叉；双均线可在下一根BTC多头K线重入，均由框架管理持仓。
 缺失BTC行情直接报错；指标NaN不发信号；BTC/ETH完整行情与预热由运行脚本审计。
 这不是套利或BTC领先ETH的保证，两个资产可能解耦，ETH独立下跌时BTC信号可能滞后。
@@ -36,7 +36,7 @@ class S09BtcTrendEth(IStrategy):
     process_only_new_candles = True
     startup_candle_count = 175
     minimal_roi = {}  # 不设独立止盈，死叉/趋势反转/框架止损退出。
-    stoploss = -0.10
+    stoploss = -0.10  # 默认固定止损10%，回测配置stoploss可覆盖；执行由Freqtrade负责。
     trailing_stop = False
     use_exit_signal = True
     exit_profit_only = False

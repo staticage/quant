@@ -2,6 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { defaults, validateConfig, runnerArguments } from '../lib/config.mjs';
 
+test('stoploss percent reaches native CLI and old records retain their original defaults',async()=>{
+  const {restoreStoplossPercent}=await import('../lib/config.mjs');
+  const c=validateConfig({...defaults,stoplossPercent:2.5}),a=runnerArguments(c,'/work/user_data/ui-runs/test');
+  assert.equal(a[a.indexOf('--stoploss-percent')+1],'2.5');
+  assert.equal(restoreStoplossPercent({strategies:['S03']}),5);
+  assert.equal(restoreStoplossPercent({strategies:['S09']}),10);
+  assert.equal(restoreStoplossPercent({strategies:['S03'],stoploss_percent:7.5}),7.5);
+  for(const value of [0,-5,100,NaN,Infinity,null,'5'])
+    assert.throws(()=>validateConfig({...defaults,stoplossPercent:value}));
+  for(const value of [0.01,99.99]) assert.equal(validateConfig({...defaults,stoplossPercent:value}).stoplossPercent,value);
+});
+
 test('valid request yields fixed argv with selected strategies and native windows',()=>{
   const config=validateConfig({...defaults,strategies:['S01','S02'],fast:10,slow:80,skipDownload:true});
   const args=runnerArguments(config,'/work/user_data/ui-runs/test');
