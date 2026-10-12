@@ -6,6 +6,19 @@ from test_freqtrade_strategies import isolated_strategy, frame
 
 
 class BtcTrendEthTests(unittest.TestCase):
+    def test_gap_orders_blocked_and_exit_deferred_until_resume(self):
+        s=isolated_strategy('S09BtcTrendEth')
+        s.config={'market_gap_windows':[{'start':'2021-03-06T02:00:00+00:00','end_exclusive':'2021-03-06T03:30:00+00:00'}]}
+        during=pd.Timestamp('2021-03-06T02:05:00Z');resume=pd.Timestamp('2021-03-06T03:30:00Z')
+        trade=SimpleNamespace(id=77)
+        def buy(t):return s.confirm_trade_entry('ETH/USDT','limit',1,2000,'GTC',t,None,'long')
+        self.assertTrue(buy(pd.Timestamp('2021-03-06T01:55:00Z')))
+        self.assertFalse(buy(during));self.assertTrue(buy(resume))
+        self.assertFalse(s.confirm_trade_exit('ETH/USDT',trade,'limit',1,2000,'GTC','stop_loss',during))
+        self.assertIsNone(s.custom_exit('ETH/USDT',trade,during,2000,0))
+        self.assertEqual(s.custom_exit('ETH/USDT',trade,resume,2000,0),'gap_resume_exit')
+        self.assertTrue(s.confirm_trade_exit('ETH/USDT',trade,'limit',1,2000,'GTC','gap_resume_exit',resume))
+
     def test_atr_tags_stake_bounds_and_unchanged_exits(self):
         s=isolated_strategy('S09BtcTrendEth');s.btc_atr_enabled.value=True
         d=frame([100]*5)

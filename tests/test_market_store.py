@@ -22,6 +22,23 @@ from postgres_service import connect
 
 @unittest.skipUnless(os.environ.get("QUANT_TEST_POSTGRES") == "1", "需要显式启用 PostgreSQL 集成测试")
 class MarketStoreTests(unittest.TestCase):
+    def test_explicit_skip_policy_keeps_raw_data_and_audits_gaps(self):
+        self.store.ingest(self.exchange,"BTC/USDT",self.frame.drop(index=[10]))
+        self.store.ingest(self.exchange,"ETH/USDT",self.frame.drop(index=[10]))
+        with tempfile.TemporaryDirectory() as directory:
+            output=Path(directory)
+            with patch("market_store.connect",return_value=nullcontext(self.conn)), patch("market_store.subprocess.run"):
+                audit=prepare_market_data(self.exchange,{('BTC/USDT','1h'):0,('ETH/USDT','1h'):0,('ETH/USDT','5m'):0},
+                    self.start.date(),self.end.date(),output/'config.json',output,output/'data',skip_gaps=True)
+            self.assertEqual(audit['gap_policy'],'skip_orders')
+            self.assertEqual(audit['pairs']['ETH/USDT']['missing'],1)
+            self.assertEqual(audit['pairs']['ETH/USDT']['partial_buckets']['1h'],1)
+            self.assertEqual(len(pd.read_feather(output/'data/BTC_USDT-1h.feather')),47)
+            self.assertEqual(len(pd.read_feather(output/'data/ETH_USDT-1h.feather')),48)
+            self.assertEqual(len(pd.read_feather(output/'data/ETH_USDT-5m.feather')),575)
+            self.assertEqual(self.store.gaps(self.exchange,'ETH/USDT',self.start,self.end),
+                [(self.start+timedelta(minutes=50),self.start+timedelta(minutes=55))])
+
     def setUp(self):
         self.conn = connect()
         self.store = MarketStore(self.conn)

@@ -32,6 +32,7 @@ MACD止损后等待新金叉；双均线可在下一根BTC多头K线重入，均
 """
 import talib.abstract as ta
 from pandas import DataFrame, Timedelta
+from pandas import Timestamp
 from freqtrade.strategy import (IStrategy, IntParameter, CategoricalParameter, BooleanParameter, DecimalParameter,
                                 merge_informative_pair, timeframe_to_minutes)
 
@@ -78,6 +79,11 @@ class S09BtcTrendEth(IStrategy):
             raise ValueError("S09需要Freqtrade DataProvider提供BTC行情")
         tf = self.btc_timeframe.value
         btc = self.dp.get_pair_dataframe(pair="BTC/USDT", timeframe=tf).copy()
+        if btc.empty:
+            raise ValueError("缺少BTC/USDT参考行情")
+        # 行情缺口显式审计。原生加载器的零成交量占位K线不用于BTC指标或方向信号；
+        # EMA/ATR在可用已收盘K线上计算，不假装维护时段存在真实价格。
+        btc = btc[btc["volume"] > 0].reset_index(drop=True)
         if btc.empty:
             raise ValueError("缺少BTC/USDT参考行情")
         if self.btc_strategy.value == "macd":
@@ -149,6 +155,39 @@ class S09BtcTrendEth(IStrategy):
         stake = min(proposed_stake * float(self.btc_atr_stake_percent.value) / 100, max_stake)
         # 返回0让Freqtrade跳过，防止原生最小金额钳制把试探仓位放大。
         return 0 if min_stake is not None and stake < min_stake else stake
+
+    def _in_market_gap(self, current_time):
+        """仅按本次成交时间检查已审计ETH原始5m缺口，不用未来缺口过滤更早订单。"""
+        now = Timestamp(current_time)
+        if not hasattr(self, "_parsed_market_gaps"):
+            self._parsed_market_gaps = [(Timestamp(w["start"]), Timestamp(w["end_exclusive"]))
+                                       for w in getattr(self, "config", {}).get("market_gap_windows", [])]
+        return any(start <= now < end for start, end in self._parsed_market_gaps)
+
+    def confirm_trade_entry(self, pair, order_type, amount, rate, time_in_force,
+                            current_time, entry_tag, side, **kwargs):
+        """框架原生下单确认：缺行情时不买；恢复后仍需正常BTC入场信号，不补买旧金叉。"""
+        return not self._in_market_gap(current_time)
+
+    def confirm_trade_exit(self, pair, trade, order_type, amount, rate, time_in_force,
+                           exit_reason, current_time, **kwargs):
+        """缺行情时不能假定卖出/止损成交，记住退出请求，由框架在恢复后按真实价格处理。
+
+        仅用于离线缺口回测，不用于实盘。缺口期间持仓不能保证止损，恢复时损失可能扩大。
+        状态只记录原生Trade的待退出原因，不实现仓位或撮合引擎。
+        """
+        if self._in_market_gap(current_time):
+            if not hasattr(self, "_gap_pending_exits"):
+                self._gap_pending_exits = {}
+            self._gap_pending_exits[trade.id] = exit_reason
+            return False
+        return True
+
+    def custom_exit(self, pair, trade, current_time, current_rate, current_profit, **kwargs):
+        """延后的退出由原生引擎重新评估并成交；缺口仍在时不返回退出信号。"""
+        if not self._in_market_gap(current_time) and trade.id in getattr(self, "_gap_pending_exits", {}):
+            return "gap_resume_exit"
+        return None
 
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         """BTC选定策略的退出条件卖ETH，不依赖ETH方向指标。"""

@@ -231,7 +231,11 @@ def main():
     before = set(results_dir.glob("*.zip"))
     try:
         record["market_store"] = prepare_market_data(args.exchange, data_plan, start, end,
-                                                    path, runtime_dir, data_dir)
+                                                    path, runtime_dir, data_dir,
+                                                    skip_gaps="S09" in args.strategies and args.timeframe_detail == "5m")
+        if record["market_store"]["gap_policy"] == "skip_orders":
+            config["market_gap_windows"] = record["market_store"]["pairs"].get("ETH/USDT", {}).get("skipped_ranges", [])
+            write_json(path, config)
         # 行情完整性审计，不计算收益或撮合。缺失行情/预热应失败，不能悄悄缩短区间。
         coverage = {}
         for (pair, tf), count in data_plan.items():
@@ -241,10 +245,11 @@ def main():
             delta = pd.Timedelta(minutes=minutes_by_tf[tf])
             first = pd.Timestamp(start, tz="UTC") - count * delta
             expected = pd.date_range(first, pd.Timestamp(end, tz="UTC"), freq=delta, inclusive="left")
-            if times.has_duplicates or len(expected.difference(times)):
+            if times.has_duplicates or (len(expected.difference(times)) and record["market_store"]["gap_policy"] != "skip_orders"):
                 raise ValueError(f"{pair} {tf}缺少行情/预热或有重复K线，请检查数据库行情补齐日志")
             coverage[f"{pair} {tf}"] = {"required_start": first.isoformat(), "end_exclusive": args.end,
-                                         "verified_candles": len(expected), "missing": 0}
+                                         "verified_candles": len(expected.intersection(times)), "missing": len(expected.difference(times)),
+                                         "gap_policy": record["market_store"]["gap_policy"]}
         record["data_coverage"] = coverage
         write_json(record_path, record)
         if args.prepare_data_only:

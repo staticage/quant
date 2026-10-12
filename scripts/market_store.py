@@ -3,7 +3,8 @@
 这里只处理 OHLCV，不实现回测或撮合。下载及最终回测均由 Freqtrade 完成。
 UTC K线开盘时间为主键，数据库只保存已经结束的现货 5m K线。
 高周期使用 date_bin 对齐 UTC，首开/最高/最低/末收/成交量求和；
-只有包含全部 5m 子K线的桶才导出，禁止不完整日线或补零影响交易信号。
+默认只有包含全部5m子K线的桶才导出。用户授权S09缺口跳过时，ETH执行桶可聚合现有
+真实子K线，依靠5m撮合及缺口禁单，BTC方向桶仍必须完整；所有缺口必须审计。
 """
 from datetime import datetime, timedelta, timezone
 import hashlib
@@ -99,16 +100,16 @@ class MarketStore:
           SELECT min(t), max(t)+interval '5 minutes' FROM grouped GROUP BY grp ORDER BY min(t)
         """, (start, end, exchange, pair)).fetchall()
 
-    def aggregate(self, exchange, pair, timeframe, start, end):
-        """数据库负责所有聚合，仅返回完整且已收盘的桶；开盘时间保留供原生框架对齐。"""
+    def aggregate(self, exchange, pair, timeframe, start, end, allow_partial=False):
+        """默认只聚合完整桶；授权的ETH执行桶可用实际子K线，必须配合5m撮合和缺口禁单。"""
         minutes = MINUTES[timeframe]
         rows = self.conn.execute("""
           SELECT date_bin(%s::interval,date,timestamptz '1970-01-01 00:00:00+00') AS bucket,
             (array_agg(open ORDER BY date))[1], max(high), min(low),
             (array_agg(close ORDER BY date DESC))[1], sum(volume)
           FROM quant_candles_5m WHERE exchange=%s AND pair=%s AND date >= %s AND date < %s
-          GROUP BY bucket HAVING count(*)=%s ORDER BY bucket
-        """, (f"{minutes} minutes", exchange, pair, start, end, minutes // 5)).fetchall()
+          GROUP BY bucket HAVING count(*)=%s OR %s ORDER BY bucket
+        """, (f"{minutes} minutes", exchange, pair, start, end, minutes // 5, allow_partial)).fetchall()
         frame = pd.DataFrame(rows, columns=COLUMNS)
         frame["date"] = pd.to_datetime(frame["date"], utc=True)
         for column in COLUMNS[1:]:
@@ -116,7 +117,7 @@ class MarketStore:
         return frame
 
 
-def prepare_market_data(exchange, plan, start, end, config_path, runtime_dir, data_dir):
+def prepare_market_data(exchange, plan, start, end, config_path, runtime_dir, data_dir, skip_gaps=False):
     """按交易对串行持锁补齐，共享数据库不会因并行 CLI 重复下载同一范围。"""
     first = datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc)
     last = datetime.combine(end, datetime.min.time(), tzinfo=timezone.utc)
@@ -148,26 +149,40 @@ def prepare_market_data(exchange, plan, start, end, config_path, runtime_dir, da
                                 "--timerange", f"{gap_start:%Y%m%dT%H%M}-{gap_end:%Y%m%dT%H%M}"], cwd=ROOT, check=True)
                             file = Path(directory) / f"{pair.replace('/', '_')}-5m.feather"
                             if not file.exists():
+                                if skip_gaps:
+                                    downloads.append({"start":gap_start.isoformat(),"end_exclusive":gap_end.isoformat(),"inserted":0})
+                                    continue
                                 raise ValueError(f"{pair} 下载没有返回5m文件")
                             candles = pd.read_feather(file)
                             candles = candles[(candles.date >= gap_start) & (candles.date < gap_end)]
                             added = store.ingest(exchange, pair, candles)
                             downloads.append({"start": gap_start.isoformat(), "end_exclusive": gap_end.isoformat(), "inserted": added})
                     remaining = store.gaps(exchange, pair, earliest, last)
-                    if remaining:
+                    if remaining and not skip_gaps:
                         raise ValueError(f"{pair} 5m 行情仍有 {len(remaining)} 段缺口，首段 {remaining[0]}；停止回测，不能静默填补")
                     audit["pairs"][pair] = {"required_start": earliest.isoformat(), "end_exclusive": last.isoformat(),
-                        "imported": imported, "downloaded_ranges": downloads, "cache_hit": not missing, "missing": 0}
+                        "imported": imported, "downloaded_ranges": downloads, "cache_hit": not missing, "missing": sum(int((b-a).total_seconds()/300) for a,b in remaining),
+                        "skipped_ranges": [{"start":a.isoformat(),"end_exclusive":b.isoformat()} for a,b in remaining]}
+                    audit["pairs"][pair]["partial_buckets"] = {}
                     for (p, tf), required_start in ranges.items():
                         if p != pair:
                             continue
-                        frame = store.aggregate(exchange, pair, tf, required_start, last)
+                        frame = store.aggregate(exchange, pair, tf, required_start, last, allow_partial=skip_gaps and pair == "ETH/USDT")
                         expected = pd.date_range(required_start, last, freq=f"{MINUTES[tf]}min", inclusive="left")
-                        if not expected.equals(pd.DatetimeIndex(frame.date)):
+                        if frame.empty:
+                            raise ValueError(f"{pair} {tf}整个区间没有可用行情")
+                        if not skip_gaps and not expected.equals(pd.DatetimeIndex(frame.date)):
                             raise ValueError(f"{pair} {tf} SQL 聚合后的K线不完整")
+                        if skip_gaps and pair == "ETH/USDT" and tf != "5m":
+                            touched = {pd.Timestamp(t).floor(f"{MINUTES[tf]}min") for a,b in remaining
+                                       for t in pd.date_range(a,b,freq="5min",inclusive="left")}
+                            audit["pairs"][pair]["partial_buckets"][tf] = len(touched.intersection(set(frame.date)))
+                        if skip_gaps and pair == "ETH/USDT" and tf == "5m" and frame.date.iloc[-1] < last - timedelta(minutes=5):
+                            raise ValueError("ETH回测终点位于行情缺口中，无法可靠结算，请调整终点")
                         get_datahandler(data_dir, "feather").ohlcv_store(pair, tf, frame, CandleType.SPOT)
                 finally:
                     conn.execute("SELECT pg_advisory_unlock(hashtextextended(%s,0))", (key,))
     except psycopg.Error:
         raise RuntimeError("PostgreSQL 行情仓库操作失败，请检查数据库权限和服务日志") from None
+    audit["gap_policy"] = "skip_orders" if skip_gaps else "strict"
     return audit

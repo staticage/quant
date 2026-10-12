@@ -45,7 +45,9 @@ export async function getJob(id) {
   const job=await reconcile(original,dir);
   let logs='';try{logs=(await fs.readFile(path.join(dir,'run.log'),'utf8')).slice(-20000);}catch(error){if(error.code!=='ENOENT')throw error;}
   const result=job.status==='completed'?await json(path.join(dir,'summary.json')):null;
-  return {job,result,logs};
+  // 已有失败记录也读取运行审计的具体错误，避免只显示笼统退出码；不改写历史状态。
+  const audit=job.status==='failed'?await json(path.join(dir,'latest-run.json')):null;
+  return {job:audit?.error?{...job,error:audit.error}:job,result,logs};
 }
 export async function startJob(input) {
   const config=validateConfig(input);
@@ -75,9 +77,10 @@ export async function startJob(input) {
       if(settled)return;settled=true;
       try {
         const result=await json(path.join(dir,'summary.json'));
+        const audit=await json(path.join(dir,'latest-run.json'));
         const completed=!error&&code===0&&result?.run?.status==='completed';
         job={...job,status:completed?'completed':'failed',finishedAt:new Date().toISOString(),
-          error:completed?null:error?.message||`Freqtrade未完成回测（退出码${code}），请查看日志。`};
+          error:completed?null:error?.message||audit?.error||`回测进程未完成（退出码${code}），请查看日志。`};
         await save(path.join(dir,'job.json'),job);
       }finally {
         await log.close();const current=await json(lockPath);if(current?.id===id)await fs.unlink(lockPath);
