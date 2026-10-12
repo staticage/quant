@@ -212,3 +212,10 @@ UV_CACHE_DIR=/Users/alex/quant/.cache/uv uv run python scripts/run_backtest.py \
 使用旧记录参数重跑S09时会采用当前BTC独立信号规则，ETH MACD旧参数不参与判断。
 当前S09默认参数已完成2026-01-01至2026-10-12真实行情回测，见[报告](reports/s09/回测结果.md)。
 BTC/ETH可能解耦，BTC信号并不保证适合ETH；选择参数后再测试并做原生未来数据/递归分析。
+
+## 公开行情代理
+
+Freqtrade的同步及异步CCXT HTTPS请求显式使用`http://127.0.0.1:7890`代理。
+配置位于config/backtest.json的ccxt_config/ccxt_async_config.httpsProxy；
+运行脚本复制到每次任务配置，切换交易所时也保留代理。代理服务需已启动。
+只影响项目公开行情请求，不修改系统网络设置，不连接交易密钥。

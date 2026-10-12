@@ -126,7 +126,10 @@ def main():
     if args.exchange != "binance":
         # Binance只读域名和市场加载选项不能套用到其他交易所。
         for key in ("ccxt_config", "ccxt_async_config"):
+            proxy = config["exchange"][key].get("httpsProxy")
             config["exchange"][key] = {"enableRateLimit": True}
+            if proxy:
+                config["exchange"][key]["httpsProxy"] = proxy
     warmup = max([args.slow if "S01" in args.strategies else 0,
                   args.entry + 1 if "S02" in args.strategies else 0,
                   20 if "S03" in args.strategies else 0,

@@ -29,7 +29,8 @@
         "api": {
           "public": "https://data-api.binance.vision/api/v3"
         }
-      }
+      },
+      "httpsProxy": "http://127.0.0.1:7890"
     },
     "ccxt_async_config": {
       "enableRateLimit": true,
@@ -44,7 +45,8 @@
         "api": {
           "public": "https://data-api.binance.vision/api/v3"
         }
-      }
+      },
+      "httpsProxy": "http://127.0.0.1:7890"
     }
   },
   "pairlists": [
