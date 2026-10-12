@@ -189,26 +189,26 @@ UV_CACHE_DIR=/Users/alex/quant/.cache/uv uv run python scripts/run_backtest.py \
   --macd-volume --macd-volume-window 20 --macd-volume-multiplier 1.2
 ```
 
-## S09：BTC趋势交易ETH
+## S09：BTC信号交易ETH
 
-在回测UI下拉框选择S09，自动将交易对设为ETH/USDT、入场周期设为1h。
-BTC/USDT仅作为同交易所参考行情，不产生BTC订单；此策略不是两腿配对套利。
+在回测UI选择S09，唯一交易对象是ETH/USDT，唯一方向信号来源是BTC/USDT。
+BTC不下单，ETH不计算MACD或其他方向信号。
 
-- 默认BTC日线MACD(12,26,9)，DIF>DEA且DIF>0允许做多。
-- ETH默认小时线MACD(12,26,9)，金叉与BTC趋势同时满足才买入。
-- ETH死叉退出；“BTC转弱退出”默认开启，可以关闭；固定10%止损始终有效。
-- BTC周期可选1d/4h，必须不短于ETH入场周期；两套MACD窗口分别可调。
-- 成交细化默认5m，与信号周期分开。BTC长K线结束后才用于ETH判断。
-- 运行脚本分别下载/审计ETH与BTC及预热，BTC不会加入交易白名单。
+- BTC MACD金叉买ETH，BTC MACD死叉卖ETH，默认日线(12,26,9)。
+- BTC信号周期可选1h/4h/1d，快线、慢线和信号线参数可调。
+- ETH执行周期不得长于BTC信号周期，默认1h；5m细化ETH的成交/止损。
+- 只在BTC K线结束并首次可见时触发一次，止损后等待下一次BTC金叉。
+- 固定10% ETH止损仍有效，可先于BTC死叉退出；没有ETH死叉或ROI退出。
+- 脚本分别下载并检查BTC信号行情与ETH成交行情，不按BTC价格撮合ETH。
 
 ```sh
 UV_CACHE_DIR=/Users/alex/quant/.cache/uv uv run python scripts/run_backtest.py \
   --strategies S09 --pairs ETH/USDT --timeframe 1h --timeframe-detail 5m \
   --start 2026-01-01 --end 2026-10-12 \
-  --macd-fast 12 --macd-slow 26 --macd-signal 9 \
-  --btc-timeframe 1d --btc-mode both --btc-fast 12 --btc-slow 26 --btc-signal 9
+  --btc-timeframe 1d --btc-fast 12 --btc-slow 26 --btc-signal 9
 ```
 
-上述命令是运行示例，本次只完成代码、Freqtrade原生加载和接口验证，尚未执行S09真实回测。
-BTC/ETH可能解耦，无法保证BTC方向能预测ETH。选择参数后再测试收益与回撤，
-并检查对应组合的lookahead-analysis/recursive-analysis。
+旧版S09（BTC趋势过滤+ETH金叉）历史记录保留原规则，不作为此版的回测结果。
+使用旧记录参数重跑S09时会采用当前BTC独立信号规则，ETH MACD旧参数不参与判断。
+本次仅完成代码、原生加载和接口验证，尚未执行当前S09真实行情回测。
+BTC/ETH可能解耦，BTC信号并不保证适合ETH；选择参数后再测试并做原生未来数据/递归分析。

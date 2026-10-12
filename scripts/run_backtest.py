@@ -62,8 +62,8 @@ def main():
     parser.add_argument("--macd-volume", action="store_true")
     parser.add_argument("--macd-volume-window", type=int, default=20)
     parser.add_argument("--macd-volume-multiplier", type=float, default=1.2)
-    parser.add_argument("--btc-timeframe", choices=["4h", "1d"], default="1d")
-    parser.add_argument("--btc-mode", choices=["dif_dea", "zero", "both"], default="both")
+    parser.add_argument("--btc-timeframe", choices=["1h", "4h", "1d"], default="1d")
+    parser.add_argument("--btc-mode", choices=["cross"], default="cross")
     parser.add_argument("--btc-fast", type=int, default=12)
     parser.add_argument("--btc-slow", type=int, default=26)
     parser.add_argument("--btc-signal", type=int, default=9)
@@ -105,6 +105,8 @@ def main():
     if not 2 <= args.macd_ma_period <= 400 or not 2 <= args.macd_volume_window <= 400 or not 0.1 <= args.macd_volume_multiplier <= 10:
         parser.error("均线/均量窗口需2~400，成交量倍数需0.1~10")
     if "S09" in args.strategies:
+        if not args.btc_exit:
+            parser.error("S09以BTC死叉退出，不支持关闭BTC退出信号")
         if args.pairs != ["ETH/USDT"]:
             parser.error("S09只交易ETH/USDT；BTC/USDT仅作为参考行情")
         if minutes_by_tf[args.btc_timeframe] < minutes_by_tf[args.timeframe]:
@@ -129,7 +131,7 @@ def main():
                   args.entry + 1 if "S02" in args.strategies else 0,
                   20 if "S03" in args.strategies else 0,
                   macd_warmup if "S08" in args.strategies else 0,
-                  5 * max(args.btc_slow + args.btc_signal, args.macd_slow + args.macd_signal) if "S09" in args.strategies else 0,
+                  5 * (args.btc_slow + args.btc_signal) if "S09" in args.strategies else 0,
                   400 if {"S04", "S05"}.intersection(args.strategies) else 0])
     # 对所选策略统一预热长度，避免比较时评估起点不同。
     config["startup_candle_count"] = warmup
@@ -148,11 +150,8 @@ def main():
                                "ma_period": args.macd_ma_period, "volume_enabled": args.macd_volume,
                                "volume_window": args.macd_volume_window,
                                "volume_multiplier": args.macd_volume_multiplier}},
-              "S09": {"buy": {"macd_fast": args.macd_fast, "macd_slow": args.macd_slow,
-                               "macd_signal": args.macd_signal, "btc_timeframe": args.btc_timeframe,
-                               "btc_mode": args.btc_mode, "btc_fast": args.btc_fast,
-                               "btc_slow": args.btc_slow, "btc_signal": args.btc_signal},
-                      "sell": {"btc_exit": args.btc_exit}}}
+              "S09": {"buy": {"btc_timeframe": args.btc_timeframe, "btc_fast": args.btc_fast,
+                               "btc_slow": args.btc_slow, "btc_signal": args.btc_signal}}}
     copied = {}
     for strategy_id in args.strategies:
         name = NAMES[strategy_id]

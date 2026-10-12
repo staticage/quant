@@ -6,19 +6,20 @@ from test_freqtrade_strategies import isolated_strategy, frame
 
 
 class BtcTrendEthTests(unittest.TestCase):
-    def test_btc_gate_and_optional_exit(self):
+    def test_btc_signals_are_only_entry_and_exit_source(self):
         s=isolated_strategy('S09BtcTrendEth')
         d=frame([100]*6)
-        d['dif'],d['dea']=[-1,1,-1,1,-1,1],[0]*6
-        d['btc_trend_up']=[False,True,True,False,False,False]
-        d['btc_valid']=[True,True,True,True,True,False]
+        d['btc_entry_signal']=[False,True,False,False,True,False]
+        d['btc_exit_signal']=[False,False,True,False,False,True]
         result=s.populate_exit_trend(s.populate_entry_trend(d.copy(),{}),{})
-        self.assertEqual(result.enter_long.tolist(),[0,1,0,0,0,0])
-        self.assertEqual(result.exit_long.tolist(),[1,0,1,1,1,0])
+        self.assertEqual(result.enter_long.tolist(),[0,1,0,0,1,0])
+        self.assertEqual(result.exit_long.tolist(),[0,0,1,0,0,1])
         self.assertFalse(((result.enter_long==1)&(result.exit_long==1)).any())
-        s.btc_exit.value=False
-        result=s.populate_exit_trend(d.copy(),{})
-        self.assertEqual(result.exit_long.tolist(),[0,0,1,0,1,0])
+        # 即使ETH方向指标反向，信号也不变。
+        d['dif'],d['dea']=[-1,1,-1,1,-1,1],[0]*6
+        changed=s.populate_exit_trend(s.populate_entry_trend(d.copy(),{}),{})
+        self.assertEqual(result.enter_long.tolist(),changed.enter_long.tolist())
+        self.assertEqual(result.exit_long.tolist(),changed.exit_long.tolist())
 
     def test_cross_asset_alignment_and_future_btc_exclusion(self):
         s=isolated_strategy('S09BtcTrendEth')
@@ -38,6 +39,15 @@ class BtcTrendEthTests(unittest.TestCase):
         self.assertEqual(full.date_1d.iloc[22],pd.Timestamp('2020-01-09',tz='UTC'))
         self.assertEqual(full.date_1d.iloc[23],pd.Timestamp('2020-01-10',tz='UTC'))
         for end in (23,24,60):pd.testing.assert_frame_equal(full.iloc[:end],analyze(eth.iloc[:end]))
+        # ETH价格完全改变，不改变BTC进出场信号；没有ETH MACD列。
+        changed_eth=eth.copy();changed_eth['close']=5000-changed_eth['close']
+        eth_result=analyze(changed_eth)
+        self.assertEqual(full.enter_long.tolist(),eth_result.enter_long.tolist())
+        self.assertEqual(full.exit_long.tolist(),eth_result.exit_long.tolist())
+        self.assertNotIn('dif',full.columns)
+        events=full[full.enter_long.eq(1)|full.exit_long.eq(1)]
+        self.assertGreater(len(events),0)
+        self.assertFalse(events.date_1d.duplicated().any())
         modified=btc.copy();modified.loc[modified.date>=pd.Timestamp('2020-01-10',tz='UTC'),'close']=10000
         s.dp.get_pair_dataframe=lambda **kwargs:modified
         changed=analyze(eth)

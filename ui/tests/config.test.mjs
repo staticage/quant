@@ -70,14 +70,14 @@ test('old/native records restore actual filter settings instead of inheriting ne
   assert.equal(restored.macdMa,false);assert.equal(macdFilterDescriptions(native).length,3);
 });
 
-test('S09 trades ETH only and passes independent BTC reference settings and exit toggle',async()=>{
+test('S09 uses BTC cross signals only and trades ETH',async()=>{
   const {restoreBtcOptions}=await import('../lib/config.mjs');
-  const input={...defaults,strategies:['S09'],pairs:['ETH/USDT'],timeframe:'1h',btcFast:19,btcSlow:39,btcExit:false};
+  const input={...defaults,strategies:['S09'],pairs:['ETH/USDT'],timeframe:'1h',btcFast:19,btcSlow:39,btcMode:'cross',btcExit:true};
   const config=validateConfig(input),args=runnerArguments(config,'/work/user_data/ui-runs/test');
-  assert.ok(args.includes('--no-btc-exit'));assert.equal(args[args.indexOf('--btc-fast')+1],'19');
+  assert.ok(!args.includes('--no-btc-exit'));assert.equal(args[args.indexOf('--btc-mode')+1],'cross');assert.equal(args[args.indexOf('--btc-fast')+1],'19');
   assert.equal(args[args.indexOf('--btc-timeframe')+1],'1d');
   assert.deepEqual(args.slice(args.indexOf('--pairs')+1,args.indexOf('--timeframe')),['ETH/USDT']);
   for(const change of [{pairs:['BTC/USDT']},{pairs:['ETH/USDT','BTC/USDT']},{timeframe:'1d',btcTimeframe:'4h'},
-    {btcExit:'false'},{btcFast:null},{btcSlow:19},{btcMode:'foo'}])assert.throws(()=>validateConfig({...input,...change}));
+    {btcExit:'false'},{btcExit:false},{btcMode:'both'},{btcFast:null},{btcSlow:19},{btcMode:'foo'}])assert.throws(()=>validateConfig({...input,...change}));
   assert.equal(restoreBtcOptions({btc_exit:false,btc_fast:19}).btcExit,false);
 });
