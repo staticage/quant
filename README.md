@@ -210,5 +210,5 @@ UV_CACHE_DIR=/Users/alex/quant/.cache/uv uv run python scripts/run_backtest.py \
 
 旧版S09（BTC趋势过滤+ETH金叉）历史记录保留原规则，不作为此版的回测结果。
 使用旧记录参数重跑S09时会采用当前BTC独立信号规则，ETH MACD旧参数不参与判断。
-本次仅完成代码、原生加载和接口验证，尚未执行当前S09真实行情回测。
+当前S09默认参数已完成2026-01-01至2026-10-12真实行情回测，见[报告](reports/s09/回测结果.md)。
 BTC/ETH可能解耦，BTC信号并不保证适合ETH；选择参数后再测试并做原生未来数据/递归分析。
