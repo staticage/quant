@@ -9,7 +9,7 @@
 
 | 路径 | 用途 | Git |
 | --- | --- | --- |
-| repo/ | 6个IStrategy源码，完整中文注释 | 管理 |
+| repo/ | 7个IStrategy源码，完整中文注释 | 管理 |
 | config/backtest.json | 无密钥的现货回测模板 | 管理 |
 | scripts/ | 复制策略、调用Freqtrade、整理原生结果 | 管理 |
 | ui/ | Next.js策略选择、参数表单、任务接口与结果查看 | 管理（node_modules/.next除外） |
@@ -188,3 +188,27 @@ UV_CACHE_DIR=/Users/alex/quant/.cache/uv uv run python scripts/run_backtest.py \
   --macd-ma --macd-ma-type ema --macd-ma-period 200 \
   --macd-volume --macd-volume-window 20 --macd-volume-multiplier 1.2
 ```
+
+## S09：BTC趋势交易ETH
+
+在回测UI下拉框选择S09，自动将交易对设为ETH/USDT、入场周期设为1h。
+BTC/USDT仅作为同交易所参考行情，不产生BTC订单；此策略不是两腿配对套利。
+
+- 默认BTC日线MACD(12,26,9)，DIF>DEA且DIF>0允许做多。
+- ETH默认小时线MACD(12,26,9)，金叉与BTC趋势同时满足才买入。
+- ETH死叉退出；“BTC转弱退出”默认开启，可以关闭；固定10%止损始终有效。
+- BTC周期可选1d/4h，必须不短于ETH入场周期；两套MACD窗口分别可调。
+- 成交细化默认5m，与信号周期分开。BTC长K线结束后才用于ETH判断。
+- 运行脚本分别下载/审计ETH与BTC及预热，BTC不会加入交易白名单。
+
+```sh
+UV_CACHE_DIR=/Users/alex/quant/.cache/uv uv run python scripts/run_backtest.py \
+  --strategies S09 --pairs ETH/USDT --timeframe 1h --timeframe-detail 5m \
+  --start 2026-01-01 --end 2026-10-12 \
+  --macd-fast 12 --macd-slow 26 --macd-signal 9 \
+  --btc-timeframe 1d --btc-mode both --btc-fast 12 --btc-slow 26 --btc-signal 9
+```
+
+上述命令是运行示例，本次只完成代码、Freqtrade原生加载和接口验证，尚未执行S09真实回测。
+BTC/ETH可能解耦，无法保证BTC方向能预测ETH。选择参数后再测试收益与回撤，
+并检查对应组合的lookahead-analysis/recursive-analysis。

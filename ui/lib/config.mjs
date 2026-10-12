@@ -5,6 +5,7 @@ export const catalog = [
   {id:'S03', name:'布林带反弹', description:'下轨买入，中轨退出，最多持有20周期', kind:'回归', timeframe:'日线起点'},
   {id:'S04', name:'RSI 超卖回调', description:'RSI(2)超卖且处于长期上升趋势', kind:'回调', timeframe:'日线起点'},
   {id:'S05', name:'时间序列动量', description:'365日动量，UTC月末更新方向', kind:'动量', timeframe:'仅日线'},
+  {id:'S09', name:'BTC 趋势交易 ETH', description:'BTC趋势允许时，ETH金叉买入；只交易ETH/USDT', kind:'跨资产', timeframe:'BTC日线 / ETH小时线'},
   {id:'S08', name:'MACD 金叉死叉', description:'DIF上穿DEA买入，下穿卖出，默认中线12/26/9', kind:'趋势', timeframe:'日线信号'},
 ];
 // 原生命令行/审计字段与UI采用相同参数语义；旧记录缺字段时按全部关闭处理。
@@ -26,9 +27,11 @@ export function macdFilterDescriptions(input) {
   if(c.macdVolume) labels.push(`成交量≥此前${c.macdVolumeWindow}根均量×${c.macdVolumeMultiplier}`);
   return labels;
 }
+export const btcDefaults={btcTimeframe:'1d',btcMode:'both',btcFast:12,btcSlow:26,btcSignal:9,btcExit:true};
+export function restoreBtcOptions(input) {return Object.fromEntries(Object.entries(btcDefaults).map(([key,value])=>{const snake=key.replace(/[A-Z]/g,c=>'_'+c.toLowerCase());return [key,input[key]!==undefined?input[key]:input[snake]!==undefined?input[snake]:value]}));}
 export const defaults = { strategies:['S08'], exchange:'binance', pairs:['BTC/USDT'],
   timeframe:'1d', timeframeDetail:'5m', start:'2026-01-01', end:'2026-10-12', fee:0.001, wallet:10000,
-  stake:1000, fast:20, slow:60, entry:20, exit:10, macdFast:12, macdSlow:26, macdSignal:9, ...macdOptionDefaults, skipDownload:false };
+  stake:1000, fast:20, slow:60, entry:20, exit:10, macdFast:12, macdSlow:26, macdSignal:9, ...macdOptionDefaults, ...btcDefaults, skipDownload:false };
 
 function fail(message) { throw new Error(message); }
 function numeric(input, name, low, high, integer=false) {
@@ -79,6 +82,15 @@ export function validateConfig(input) {
   if(['macdMtf','macdRsi','macdMa','macdVolume'].some(key=>config[key])&&!config.strategies.includes('S08')) fail('增强选项只适用于S08 MACD');
   const minutes={'1h':60,'4h':240,'1d':1440};
   if(config.macdMtf&&minutes[config.macdTrendTimeframe]<=minutes[config.timeframe]) fail('趋势周期必须长于入场信号周期');
+  const btc=restoreBtcOptions(input);
+  if(!['4h','1d'].includes(btc.btcTimeframe)||!['dif_dea','zero','both'].includes(btc.btcMode)||typeof btc.btcExit!=='boolean') fail('BTC趋势参数无效');
+  Object.assign(config,{btcTimeframe:btc.btcTimeframe,btcMode:btc.btcMode,btcExit:btc.btcExit});
+  for(const [key,low,high] of [['btcFast',2,399],['btcSlow',3,400],['btcSignal',2,100]]) config[key]=numeric(btc,key,low,high,true);
+  if(config.btcFast>=config.btcSlow) fail('BTC快线必须小于慢线');
+  if(config.strategies.includes('S09')) {
+    if(config.pairs.length!==1||config.pairs[0]!=='ETH/USDT') fail('S09只交易ETH/USDT；BTC仅用于趋势参考');
+    if(minutes[config.btcTimeframe]<minutes[config.timeframe]) fail('BTC趋势周期不能短于ETH入场周期');
+  }
   if(config.stake>config.wallet*.99) fail('单笔投入不能超过初始资金的99%');
   if(config.fast>=config.slow) fail('短均线必须小于长均线');
   if(config.exit>config.entry) fail('退出窗口不能大于入场窗口');
@@ -95,6 +107,10 @@ export function runnerArguments(config, outputDir) {
     if(config[key]) result.push('--'+key.replace(/[A-Z]/g,c=>'-'+c.toLowerCase()));
   for(const key of Object.keys(macdOptionDefaults).filter(key=>!['macdMtf','macdRsi','macdMa','macdVolume'].includes(key)))
     result.push('--'+key.replace(/[A-Z]/g,c=>'-'+c.toLowerCase()),String(config[key]??macdOptionDefaults[key]));
+  if(config.strategies.includes('S09')) {
+    for(const key of ['btcTimeframe','btcMode','btcFast','btcSlow','btcSignal']) result.push('--'+key.replace(/[A-Z]/g,c=>'-'+c.toLowerCase()),String(config[key]));
+    result.push(config.btcExit?'--btc-exit':'--no-btc-exit');
+  }
   if(config.timeframeDetail) result.push('--timeframe-detail',config.timeframeDetail);
   if(config.skipDownload) result.push('--skip-download');
   return result;

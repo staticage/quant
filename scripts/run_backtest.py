@@ -18,7 +18,7 @@ from freqtrade import __version__
 ROOT = Path(__file__).resolve().parents[1]
 NAMES = {"S01": "S01SmaTrend", "S02": "S02DonchianBreakout",
          "S03": "S03BollingerReversion", "S04": "S04RsiPullback",
-         "S05": "S05TimeSeriesMomentum", "S08": "S08MacdCross"}
+         "S05": "S05TimeSeriesMomentum", "S08": "S08MacdCross", "S09": "S09BtcTrendEth"}
 
 
 def write_json(path, value):
@@ -62,6 +62,12 @@ def main():
     parser.add_argument("--macd-volume", action="store_true")
     parser.add_argument("--macd-volume-window", type=int, default=20)
     parser.add_argument("--macd-volume-multiplier", type=float, default=1.2)
+    parser.add_argument("--btc-timeframe", choices=["4h", "1d"], default="1d")
+    parser.add_argument("--btc-mode", choices=["dif_dea", "zero", "both"], default="both")
+    parser.add_argument("--btc-fast", type=int, default=12)
+    parser.add_argument("--btc-slow", type=int, default=26)
+    parser.add_argument("--btc-signal", type=int, default=9)
+    parser.add_argument("--btc-exit", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--prepare-only", action="store_true", help="只复制策略、生成配置，不联网回测")
     parser.add_argument("--skip-download", action="store_true", help="复用已下载行情")
     parser.add_argument("--output-dir", help="UI任务独立输出目录（项目user_data/ui-runs内）")
@@ -98,6 +104,13 @@ def main():
         parser.error("RSI周期需2~100，下限<上限，阈值需0~100")
     if not 2 <= args.macd_ma_period <= 400 or not 2 <= args.macd_volume_window <= 400 or not 0.1 <= args.macd_volume_multiplier <= 10:
         parser.error("均线/均量窗口需2~400，成交量倍数需0.1~10")
+    if "S09" in args.strategies:
+        if args.pairs != ["ETH/USDT"]:
+            parser.error("S09只交易ETH/USDT；BTC/USDT仅作为参考行情")
+        if minutes_by_tf[args.btc_timeframe] < minutes_by_tf[args.timeframe]:
+            parser.error("BTC趋势周期不能短于ETH入场周期")
+    if not 2 <= args.btc_fast < args.btc_slow <= 400 or not 2 <= args.btc_signal <= 100:
+        parser.error("BTC MACD窗口无效")
     # 主周期和长周期使用框架统一startup_candle_count；下载与审计都按这一数量预热。
     macd_warmup = max(5 * (args.macd_slow + args.macd_signal),
                       5 * (args.macd_trend_slow + args.macd_trend_signal) if args.macd_mtf else 0,
@@ -116,6 +129,7 @@ def main():
                   args.entry + 1 if "S02" in args.strategies else 0,
                   20 if "S03" in args.strategies else 0,
                   macd_warmup if "S08" in args.strategies else 0,
+                  5 * max(args.btc_slow + args.btc_signal, args.macd_slow + args.macd_signal) if "S09" in args.strategies else 0,
                   400 if {"S04", "S05"}.intersection(args.strategies) else 0])
     # 对所选策略统一预热长度，避免比较时评估起点不同。
     config["startup_candle_count"] = warmup
@@ -133,7 +147,12 @@ def main():
                                "ma_enabled": args.macd_ma, "ma_type": args.macd_ma_type,
                                "ma_period": args.macd_ma_period, "volume_enabled": args.macd_volume,
                                "volume_window": args.macd_volume_window,
-                               "volume_multiplier": args.macd_volume_multiplier}}}
+                               "volume_multiplier": args.macd_volume_multiplier}},
+              "S09": {"buy": {"macd_fast": args.macd_fast, "macd_slow": args.macd_slow,
+                               "macd_signal": args.macd_signal, "btc_timeframe": args.btc_timeframe,
+                               "btc_mode": args.btc_mode, "btc_fast": args.btc_fast,
+                               "btc_slow": args.btc_slow, "btc_signal": args.btc_signal},
+                      "sell": {"btc_exit": args.btc_exit}}}
     copied = {}
     for strategy_id in args.strategies:
         name = NAMES[strategy_id]
@@ -151,21 +170,26 @@ def main():
     path = runtime_dir / "config.backtest.json"
     write_json(path, config)
     # metadata仅用于审计；所有收益/交易/风险指标均由Freqtrade输出。
-    record = {"arguments": vars(args), "source_sha256": copied,
-              "freqtrade_version": __version__,
-              "startup_candle_count": warmup, "status": "prepared",
-              "created_at": datetime.now(timezone.utc).isoformat()}
-    record_path = output_dir / "latest-run.json"
-    write_json(record_path, record)
-    if args.prepare_only:
-        print(f"已复制策略并生成配置：{path}")
-        return
     # 为入场、成交细化、长周期分别规划行情，使用各自K线长度，避免只下载短周期。
     data_warmups = {args.timeframe: warmup}
     if args.timeframe_detail:
         data_warmups[args.timeframe_detail] = 0
     if args.macd_mtf:
         data_warmups[args.macd_trend_timeframe] = warmup
+    data_plan = {(pair, tf): count for pair in args.pairs for tf, count in data_warmups.items()}
+    if "S09" in args.strategies:
+        data_plan[("BTC/USDT", args.btc_timeframe)] = warmup
+    record = {"arguments": vars(args), "source_sha256": copied,
+              "freqtrade_version": __version__,
+              "startup_candle_count": warmup, "status": "prepared",
+              "data_requirements": [{"pair": pair, "timeframe": tf, "warmup_candles": count}
+                                    for (pair, tf), count in data_plan.items()],
+              "created_at": datetime.now(timezone.utc).isoformat()}
+    record_path = output_dir / "latest-run.json"
+    write_json(record_path, record)
+    if args.prepare_only:
+        print(f"已复制策略并生成配置：{path}")
+        return
     base = ["uv", "run", "--no-sync", "freqtrade"]
     common = ["--config", str(path), "--userdir", str(runtime_dir),
               "--datadir", str(ROOT / "user_data/data" / args.exchange)]
@@ -173,28 +197,27 @@ def main():
     before = set(results_dir.glob("*.zip"))
     try:
         if not args.skip_download:
-            for tf, count in data_warmups.items():
+            for (pair, tf), count in data_plan.items():
                 download_start = datetime.combine(start, datetime.min.time()) - timedelta(
                     minutes=(count + 10 if count else 0) * minutes_by_tf[tf])
                 # Freqtrade默认只追加；先补历史再追加近期数据，不能因预热不足推迟起点。
                 for prepend in (True, False):
-                    subprocess.run(base + ["download-data"] + common + ["--timeframes", tf,
+                    subprocess.run(base + ["download-data"] + common + ["--pairs", pair, "--timeframes", tf,
                                    "--timerange", f"{download_start:%Y%m%d}-{end:%Y%m%d}"] +
                                    (["--prepend"] if prepend else []), cwd=ROOT, check=True)
         # 行情完整性审计，不计算收益或撮合。缺失行情/预热应失败，不能悄悄缩短区间。
         coverage = {}
-        for pair in args.pairs:
-            for tf, count in data_warmups.items():
-                data_path = ROOT / "user_data/data" / args.exchange / f"{pair.replace('/', '_')}-{tf}.feather"
-                candles = pd.read_feather(data_path)
-                times = pd.DatetimeIndex(pd.to_datetime(candles["date"], utc=True))
-                delta = pd.Timedelta(minutes=minutes_by_tf[tf])
-                first = pd.Timestamp(start, tz="UTC") - count * delta
-                expected = pd.date_range(first, pd.Timestamp(end, tz="UTC"), freq=delta, inclusive="left")
-                if times.has_duplicates or len(expected.difference(times)):
-                    raise ValueError(f"{pair} {tf}缺少行情/预热或有重复K线，请关闭复用行情后重新下载")
-                coverage[f"{pair} {tf}"] = {"required_start": first.isoformat(), "end_exclusive": args.end,
-                                             "verified_candles": len(expected), "missing": 0}
+        for (pair, tf), count in data_plan.items():
+            data_path = ROOT / "user_data/data" / args.exchange / f"{pair.replace('/', '_')}-{tf}.feather"
+            candles = pd.read_feather(data_path)
+            times = pd.DatetimeIndex(pd.to_datetime(candles["date"], utc=True))
+            delta = pd.Timedelta(minutes=minutes_by_tf[tf])
+            first = pd.Timestamp(start, tz="UTC") - count * delta
+            expected = pd.date_range(first, pd.Timestamp(end, tz="UTC"), freq=delta, inclusive="left")
+            if times.has_duplicates or len(expected.difference(times)):
+                raise ValueError(f"{pair} {tf}缺少行情/预热或有重复K线，请关闭复用行情后重新下载")
+            coverage[f"{pair} {tf}"] = {"required_start": first.isoformat(), "end_exclusive": args.end,
+                                         "verified_candles": len(expected), "missing": 0}
         record["data_coverage"] = coverage
         write_json(record_path, record)
         subprocess.run(base + ["backtesting"] + common + ["--strategy-list"] +
@@ -213,9 +236,8 @@ def main():
     record.update(status="completed", result_file=str(max(fresh, key=lambda p: p.stat().st_mtime).relative_to(ROOT)))
     data_dir = ROOT / "user_data/data" / args.exchange
     record["data_sha256"] = {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
-                              for p in data_dir.glob("*.feather")
-                              if any(p.name.endswith(f"-{tf}.feather") for tf in
-                                     data_warmups)}
+                              for pair, tf in data_plan
+                              for p in [data_dir / f"{pair.replace('/', '_')}-{tf}.feather"]}
     write_json(record_path, record)
     subprocess.run(["uv", "run", "--no-sync", "python", "scripts/build_report.py",
                     "--output-dir", str(output_dir)], cwd=ROOT, check=True)
